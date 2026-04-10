@@ -1,0 +1,19 @@
+# Crypto Exchange APIs
+ccxt==4.3.89          # Unified crypto exchange library (Binance, Kraken, etc.)
+
+# Async & HTTP
+aiohttp==3.9.5
+requests==2.31.0
+
+# Data & Analysis
+pandas==2.2.2
+numpy==1.26.4
+
+# Configuration
+python-dotenv==1.0.1
+
+# Logging
+loguru==0.7.2
+
+# Testing
+pytest==8.2.0

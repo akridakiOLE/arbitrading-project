@@ -1,0 +1,33 @@
+# Secrets & Config
+config/secrets.env
+config/.env
+*.env
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Data & Logs
+data/
+logs/
+*.log
+*.csv
+*.db
+
+# IDE
+.vscode/settings.json
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
