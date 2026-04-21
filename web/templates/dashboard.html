@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8">
+  <title>Arbitrading Bot Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <h1>Arbitrading Bot</h1>
+  <div class="header-right">
+    <span id="status-badge" class="badge badge-idle">STOPPED</span>
+    <a href="/logout" class="logout">Logout</a>
+  </div>
+</header>
+
+<main>
+
+  <!-- Live status panel -->
+  <section class="panel">
+    <h2>Live Status</h2>
+    <div class="grid-4">
+      <div class="metric"><span class="metric-label">Mode</span>       <span id="m-mode">-</span></div>
+      <div class="metric"><span class="metric-label">Symbol</span>     <span id="m-symbol">-</span></div>
+      <div class="metric"><span class="metric-label">State</span>      <span id="m-state">-</span></div>
+      <div class="metric"><span class="metric-label">Cycles</span>     <span id="m-cycles">0</span></div>
+      <div class="metric"><span class="metric-label">Ticks</span>      <span id="m-ticks">0</span></div>
+      <div class="metric"><span class="metric-label">Last Price</span> <span id="m-price">-</span></div>
+      <div class="metric"><span class="metric-label">Reference</span>  <span id="m-ref">-</span></div>
+      <div class="metric"><span class="metric-label">Margin Ratio</span><span id="m-ratio">-</span></div>
+      <div class="metric"><span class="metric-label">BUY count</span>  <span id="m-buy-cnt">0</span></div>
+      <div class="metric"><span class="metric-label">SELL count</span> <span id="m-sell-cnt">0</span></div>
+      <div class="metric"><span class="metric-label">has_bought</span> <span id="m-hb">-</span></div>
+      <div class="metric"><span class="metric-label">Active BUY %</span><span id="m-apb">-</span></div>
+    </div>
+  </section>
+
+  <!-- Balances -->
+  <section class="panel">
+    <h2>Balances</h2>
+    <div class="grid-4">
+      <div class="metric"><span class="metric-label">BASE asset</span> <span id="b-base">-</span></div>
+      <div class="metric"><span class="metric-label">BASE borrow</span><span id="b-bborrow">-</span></div>
+      <div class="metric"><span class="metric-label">USDT cash</span> <span id="b-usdt">-</span></div>
+      <div class="metric"><span class="metric-label">USDT debt</span> <span id="b-udebt">-</span></div>
+      <div class="metric"><span class="metric-label">VIP debt (USDT)</span><span id="b-vdebt">-</span></div>
+      <div class="metric"><span class="metric-label">VIP holdings</span><span id="b-vip">{}</span></div>
+      <div class="metric"><span class="metric-label">Grand_amount</span><span id="b-grand">-</span></div>
+      <div class="metric"><span class="metric-label">Total assets</span><span id="b-tassets">-</span></div>
+    </div>
+  </section>
+
+  <!-- Controls -->
+  <section class="panel">
+    <h2>Controls</h2>
+    <div class="controls">
+      <button id="btn-start"  class="btn btn-green"  disabled>Start</button>
+      <button id="btn-stop"   class="btn btn-red"    disabled>Stop</button>
+      <button id="btn-resset" class="btn btn-orange" disabled>Resset_Invest (Promote 3)</button>
+    </div>
+    <div id="controls-msg" class="msg"></div>
+  </section>
+
+  <!-- Config -->
+  <section class="panel">
+    <h2>Configuration</h2>
+    <form id="cfg-form" class="cfg-form">
+      <div class="cfg-row">
+        <label>Mode</label>
+        <select name="mode">
+          <option value="paper">paper (ασφαλές)</option>
+          <option value="live">live (πραγματικές εντολές)</option>
+        </select>
+      </div>
+      <div class="cfg-row"><label>Symbol</label>                <input name="symbol"></div>
+      <div class="cfg-row"><label>start_base_coin</label>       <input name="start_base_coin" type="number" step="any"></div>
+      <div class="cfg-row"><label>scale_base_coin</label>       <input name="scale_base_coin" type="number" step="any"></div>
+      <div class="cfg-row"><label>min_profit_percent</label>    <input name="min_profit_percent" type="number" step="any"></div>
+      <div class="cfg-row"><label>step_point</label>            <input name="step_point" type="number" step="any"></div>
+      <div class="cfg-row"><label>trailing_stop</label>         <input name="trailing_stop" type="number" step="any"></div>
+      <div class="cfg-row"><label>margin_level</label>          <input name="margin_level" type="number" step="any"></div>
+      <div class="cfg-row">
+        <label>promote</label>
+        <select name="promote">
+          <option value="1">1 — Up_Investment</option>
+          <option value="2">2 — Buy_Choice_Coins</option>
+          <option value="3">3 — Resset_Invest (manual)</option>
+        </select>
+      </div>
+      <div class="cfg-row">
+        <label>second_profit_enabled</label>
+        <select name="second_profit_enabled">
+          <option value="false">OFF (default)</option>
+          <option value="true">ON</option>
+        </select>
+      </div>
+      <div class="cfg-row"><label>second_profit_percent</label> <input name="second_profit_percent" type="number" step="any"></div>
+      <div class="cfg-row"><label>poll_interval (s)</label>     <input name="poll_interval" type="number" step="any"></div>
+    </form>
+    <div class="cfg-notice">
+      Ρυθμίσεις αποθηκεύονται κατά το Start. Για να αλλάξεις ρυθμίσεις τύπου (*)
+      ενώ τρέχει, κάνε Stop, άλλαξε, Start ξανά.
+    </div>
+  </section>
+
+  <!-- Trades -->
+  <section class="panel">
+    <h2>Recent Trades (50)</h2>
+    <div class="table-wrap">
+      <table id="trades-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>Time</th><th>Action</th><th>Symbol</th>
+            <th>Qty</th><th>Price</th><th>USDT</th><th>Note</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- State events -->
+  <section class="panel">
+    <h2>State Events</h2>
+    <div class="table-wrap">
+      <table id="state-table">
+        <thead>
+          <tr><th>Time</th><th>Event</th><th>State</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

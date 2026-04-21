@@ -1,0 +1,26 @@
+[Unit]
+Description=Arbitrading Bot Web Dashboard + Bot
+After=network.target
+
+[Service]
+Type=simple
+User=arbitrading
+Group=arbitrading
+WorkingDirectory=/opt/arbitrading-project
+Environment="PATH=/opt/arbitrading-project/.venv/bin"
+EnvironmentFile=/opt/arbitrading-project/config/secrets.env
+ExecStart=/opt/arbitrading-project/.venv/bin/gunicorn \
+    --workers 1 \
+    --threads 4 \
+    --bind 127.0.0.1:5001 \
+    --timeout 120 \
+    --access-logfile /var/log/arbitrading/access.log \
+    --error-logfile /var/log/arbitrading/error.log \
+    web.app:app
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/log/arbitrading/stdout.log
+StandardError=append:/var/log/arbitrading/stderr.log
+
+[Install]
+WantedBy=multi-user.target

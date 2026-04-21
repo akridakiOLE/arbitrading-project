@@ -1,5 +1,9 @@
 # Crypto Exchange APIs
-ccxt==4.3.89          # Unified crypto exchange library (Binance, Kraken, etc.)
+ccxt>=4.3.89          # Unified crypto exchange library (Binance, Kraken, etc.)
+
+# Web framework (v4 Phase 3b)
+flask==3.0.0
+gunicorn==21.2.0
 
 # Async & HTTP
 aiohttp==3.9.5

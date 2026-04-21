@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8">
+  <title>Arbitrading Bot - Login</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-body">
+  <div class="login-box">
+    <h1>Arbitrading Bot</h1>
+    <form method="POST" action="/login">
+      <label for="password">Password</label>
+      <input type="password" name="password" id="password" autofocus required>
+      <button type="submit">Login</button>
+      {% if error %}
+        <div class="error">{{ error }}</div>
+      {% endif %}
+    </form>
+  </div>
+</body>
+</html>

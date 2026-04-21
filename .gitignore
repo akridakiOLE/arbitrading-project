@@ -31,3 +31,10 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+Master_arbitrading-project_v*.md) 
+
+# Backtest result dumps
+results*.txt
+
+# Old master docs on Google Drive
+Master_arbitrading-project_v*.md
