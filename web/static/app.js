@@ -1,4 +1,12 @@
-// Arbitrading Bot Dashboard - Client JS
+// Arbitrading Bot Dashboard - Client JS (v5.1)
+//
+// Νέα features:
+//  - Apply Settings (Live): εφαρμόζει LIVE + NEXT_CYCLE changes χωρίς Stop/Start
+//  - Resume-from-state toggle
+//  - Price highlight + progress bars trigger distance
+//  - On-demand ATR
+//  - Traded symbols history
+//  - Symbol preset dropdown + KuCoin validation button
 
 const REFRESH_MS = 3000;
 
@@ -29,6 +37,48 @@ function setText(id, val) {
   if (el) el.textContent = val;
 }
 
+// -----------------------------------------------------------------
+// Trigger distance computation (B3b)
+// -----------------------------------------------------------------
+function renderTriggerBoxes(s) {
+  const price = (s.feed && typeof s.feed.last_price === 'number') ? s.feed.last_price : null;
+  const st    = s.strategy || {};
+  const ref   = (typeof st.reference_price === 'number') ? st.reference_price : null;
+
+  // Οι πραγματικές τιμές trigger (buy_trailing_stop / sell_trailing_stop) ισχύουν
+  // μόνο όταν έχει ενεργοποιηθεί ο tracker. Σε αλλιώς, υπολογίζουμε initial
+  // activation thresholds από reference_price και active profit pct.
+  const pctBuy  = (typeof st.active_profit_pct_buy  === 'number') ? st.active_profit_pct_buy  : null;
+  const pctSell = (typeof st.active_profit_pct_sell === 'number') ? st.active_profit_pct_sell : null;
+
+  let buyTarget  = (st.buy_activated  ? st.buy_trailing_stop  : (ref && pctBuy  !== null ? ref * (1 - pctBuy  / 100) : null));
+  let sellTarget = (st.sell_activated ? st.sell_trailing_stop : (ref && pctSell !== null ? ref * (1 + pctSell / 100) : null));
+
+  setText('t-buy-val',  buyTarget  !== null && buyTarget  !== undefined ? fmt(buyTarget,  10) : '-');
+  setText('t-sell-val', sellTarget !== null && sellTarget !== undefined ? fmt(sellTarget, 10) : '-');
+
+  // BUY trigger: απόσταση = (price - buyTarget) / price · 100  (θέλουμε να πέσει)
+  // SELL trigger: απόσταση = (sellTarget - price) / price · 100 (θέλουμε να ανέβει)
+  if (price !== null && buyTarget !== null && price > 0) {
+    const dist = ((price - buyTarget) / price) * 100;
+    setText('t-buy-dist', dist >= 0 ? dist.toFixed(2) : dist.toFixed(2));
+    const pct = Math.max(0, Math.min(100, (1 - Math.min(Math.abs(dist), 10) / 10) * 100));
+    document.getElementById('t-buy-bar').style.width = pct + '%';
+  } else {
+    setText('t-buy-dist', '-');
+    document.getElementById('t-buy-bar').style.width = '0%';
+  }
+  if (price !== null && sellTarget !== null && price > 0) {
+    const dist = ((sellTarget - price) / price) * 100;
+    setText('t-sell-dist', dist >= 0 ? dist.toFixed(2) : dist.toFixed(2));
+    const pct = Math.max(0, Math.min(100, (1 - Math.min(Math.abs(dist), 10) / 10) * 100));
+    document.getElementById('t-sell-bar').style.width = pct + '%';
+  } else {
+    setText('t-sell-dist', '-');
+    document.getElementById('t-sell-bar').style.width = '0%';
+  }
+}
+
 function renderStatus(s) {
   const running = !!s.running;
   const badge = document.getElementById('status-badge');
@@ -38,27 +88,35 @@ function renderStatus(s) {
     badge.textContent = 'ERROR';
     badge.className = 'badge badge-error';
     badge.title = s.last_error;
+  } else {
+    badge.title = '';
   }
 
-  document.getElementById('btn-start').disabled  = running;
-  document.getElementById('btn-stop').disabled   = !running;
-  document.getElementById('btn-resset').disabled = !running;
+  document.getElementById('btn-start').disabled      = running;
+  document.getElementById('btn-stop').disabled       = !running;
+  document.getElementById('btn-resset').disabled     = !running;
+  document.getElementById('btn-apply-live').disabled = !running;
 
-  setText('m-mode',   s.mode || '-');
-  setText('m-symbol', s.symbol || '-');
-  setText('m-ticks',  s.tick_count || 0);
+  setText('m-mode',       s.mode   || '-');
+  setText('m-symbol',     s.symbol || '-');
+  setText('m-symbol-big', s.symbol || '-');
+  setText('m-ticks',      s.tick_count || 0);
 
   const st = s.strategy || {};
   const sn = s.snapshot || {};
-  setText('m-state',   st.state || '-');
-  setText('m-cycles',  st.cycle_count || 0);
-  setText('m-price',   (s.feed && s.feed.last_price !== null && s.feed.last_price !== undefined) ? fmt(s.feed.last_price, 10) : '-');
-  setText('m-ref',     fmt(st.reference_price, 10));
-  setText('m-ratio',   fmt(sn.margin_ratio, 4));
-  setText('m-buy-cnt', st.buy_trigger_count || 0);
-  setText('m-sell-cnt',st.sell_trigger_count || 0);
-  setText('m-hb',      st.has_bought === true ? 'true' : (st.has_bought === false ? 'false' : '-'));
-  setText('m-apb',     st.active_profit_pct_buy !== undefined ? fmt(st.active_profit_pct_buy, 2) : '-');
+  setText('m-state',    st.state || '-');
+  setText('m-cycles',   st.cycle_count || 0);
+
+  const lastPrice = (s.feed && s.feed.last_price !== null && s.feed.last_price !== undefined)
+                    ? s.feed.last_price : null;
+  setText('m-price',     lastPrice !== null ? fmt(lastPrice, 10) : '-');
+  setText('m-price-big', lastPrice !== null ? fmt(lastPrice, 10) : '-');
+  setText('m-ref',       fmt(st.reference_price, 10));
+  setText('m-ratio',     fmt(sn.margin_ratio, 4));
+  setText('m-buy-cnt',   st.buy_trigger_count || 0);
+  setText('m-sell-cnt',  st.sell_trigger_count || 0);
+  setText('m-hb',        st.has_bought === true ? 'true' : (st.has_bought === false ? 'false' : '-'));
+  setText('m-apb',       st.active_profit_pct_buy !== undefined ? fmt(st.active_profit_pct_buy, 2) : '-');
 
   setText('b-base',    fmt(sn.base_coin, 4));
   setText('b-bborrow', fmt(sn.base_debt, 4));
@@ -68,6 +126,29 @@ function renderStatus(s) {
   setText('b-vip',     JSON.stringify(sn.vip_holdings || {}));
   setText('b-grand',   fmt(st.grand_amount, 2));
   setText('b-tassets', fmt(sn.total_assets, 2));
+
+  // Resume event display
+  const ri = document.getElementById('resume-info');
+  if (s.last_resume_event) {
+    ri.textContent = 'Last start: ' + s.last_resume_event;
+    ri.className = 'resume-info ' + (s.last_resume_event === 'resumed' ? 'resumed' : 'fresh');
+  } else {
+    ri.textContent = '';
+  }
+
+  // Pending NEXT_CYCLE display
+  const pi = document.getElementById('pending-info');
+  const pending = s.pending_next_cycle || {};
+  const keys = Object.keys(pending);
+  if (keys.length > 0) {
+    pi.textContent = 'Pending (επόμενο SETUP): ' + keys.map(k => `${k}=${pending[k]}`).join(', ');
+    pi.className = 'pending-info visible';
+  } else {
+    pi.textContent = '';
+    pi.className = 'pending-info';
+  }
+
+  renderTriggerBoxes(s);
 }
 
 async function loadStatus() {
@@ -89,9 +170,19 @@ async function loadConfig() {
       if (el.type === 'checkbox') el.checked = !!v;
       else el.value = (typeof v === 'boolean') ? String(v) : v;
     }
+    // Sync symbol preset dropdown με το input
+    syncSymbolPreset();
   } catch (e) {
     console.error('config load failed', e);
   }
+}
+
+function syncSymbolPreset() {
+  const input  = document.querySelector('[name="symbol"]');
+  const preset = document.getElementById('symbol-preset');
+  if (!input || !preset) return;
+  const opts = Array.from(preset.options).map(o => o.value);
+  preset.value = opts.includes(input.value) ? input.value : '';
 }
 
 function getConfigFromForm() {
@@ -99,10 +190,12 @@ function getConfigFromForm() {
   const fd = new FormData(form);
   const o = {};
   for (const [k, v] of fd.entries()) {
+    if (k === 'symbol_preset') continue;   // UI-only
     o[k] = v;
   }
   // Types
   o.second_profit_enabled = (o.second_profit_enabled === 'true');
+  o.resume_from_state     = (o.resume_from_state     === 'true');
   for (const key of ['start_base_coin','scale_base_coin','min_profit_percent','step_point',
                      'trailing_stop','margin_level','second_profit_percent','poll_interval']) {
     if (o[key] !== undefined && o[key] !== '') o[key] = parseFloat(o[key]);
@@ -115,8 +208,12 @@ function showMsg(text, type = 'ok') {
   const m = document.getElementById('controls-msg');
   m.textContent = text;
   m.className   = 'msg ' + type;
-  setTimeout(() => { m.textContent = ''; m.className = 'msg'; }, 5000);
+  setTimeout(() => { m.textContent = ''; m.className = 'msg'; }, 6000);
 }
+
+// -----------------------------------------------------------------
+// Buttons
+// -----------------------------------------------------------------
 
 document.getElementById('btn-start').addEventListener('click', async () => {
   const cfg = getConfigFromForm();
@@ -131,17 +228,26 @@ document.getElementById('btn-start').addEventListener('click', async () => {
   }
   try {
     const r = await api('/api/start', {method: 'POST', body: cfg});
-    if (r.ok) showMsg(`Started ${r.mode} mode for ${r.symbol}`, 'ok');
-    else       showMsg(`Start failed: ${r.error}`, 'error');
+    if (r.ok) {
+      const resume = (r.resume && r.resume.decision) ? r.resume.decision : '?';
+      showMsg(`Started ${r.mode} mode for ${r.symbol} (${resume})`, 'ok');
+    } else {
+      showMsg(`Start failed: ${r.error}`, 'error');
+    }
     await loadStatus();
   } catch (e) { showMsg(`Start error: ${e}`, 'error'); }
 });
 
 document.getElementById('btn-stop').addEventListener('click', async () => {
-  if (!confirm('Stop bot?')) return;
+  if (!confirm(
+    'Soft Stop\n\n' +
+    'Θα σταματήσει το bot. ΔΕΝ θα κλείσουν ανοιχτές margin θέσεις στο KuCoin.\n' +
+    'Τυχόν ανοιχτές θέσεις θα πρέπει να τις χειριστείς χειροκίνητα.\n\n' +
+    'Συνέχεια;'
+  )) return;
   try {
     const r = await api('/api/stop', {method: 'POST'});
-    if (r.ok) showMsg('Stopped', 'ok');
+    if (r.ok) showMsg('Soft-stopped (no exchange actions)', 'ok');
     else       showMsg(`Stop failed: ${r.error}`, 'error');
     await loadStatus();
   } catch (e) { showMsg(`Stop error: ${e}`, 'error'); }
@@ -163,6 +269,72 @@ document.getElementById('btn-resset').addEventListener('click', async () => {
   } catch (e) { showMsg(`Resset error: ${e}`, 'error'); }
 });
 
+document.getElementById('btn-apply-live').addEventListener('click', async () => {
+  const cfg = getConfigFromForm();
+  try {
+    const r = await api('/api/config/update', {method: 'POST', body: cfg});
+    const parts = [];
+    if (r.applied_live      && r.applied_live.length)      parts.push('LIVE: '      + r.applied_live.join(', '));
+    if (r.queued_next_cycle && r.queued_next_cycle.length) parts.push('NEXT_CYCLE: ' + r.queued_next_cycle.join(', '));
+    if (r.rejected_restart  && r.rejected_restart.length)  parts.push('RESTART skipped: ' + r.rejected_restart.join(', '));
+    if (parts.length === 0) parts.push('No changes applicable');
+    showMsg(parts.join(' | '), 'ok');
+    await loadStatus();
+  } catch (e) { showMsg(`Apply failed: ${e}`, 'error'); }
+});
+
+// -----------------------------------------------------------------
+// Symbol preset + check button (A5)
+// -----------------------------------------------------------------
+document.getElementById('symbol-preset').addEventListener('change', (e) => {
+  const v = e.target.value;
+  if (!v) return;
+  document.querySelector('[name="symbol"]').value = v;
+});
+
+document.getElementById('btn-check-symbol').addEventListener('click', async () => {
+  const sym = document.querySelector('[name="symbol"]').value;
+  const m = document.getElementById('symbol-check-msg');
+  if (!sym) { m.textContent = 'Δώσε symbol πρώτα'; m.className = 'msg-inline error'; return; }
+  m.textContent = 'Checking...'; m.className = 'msg-inline';
+  try {
+    const r = await api('/api/atr?timeframe=1h&symbol=' + encodeURIComponent(sym));
+    if (r.error) {
+      m.textContent = 'INVALID: ' + r.error;
+      m.className = 'msg-inline error';
+    } else {
+      m.textContent = `OK — last close ${fmt(r.last_close, 10)}`;
+      m.className = 'msg-inline ok';
+    }
+  } catch (e) {
+    m.textContent = 'Check failed: ' + e;
+    m.className = 'msg-inline error';
+  }
+});
+
+// -----------------------------------------------------------------
+// ATR on-demand (B3c)
+// -----------------------------------------------------------------
+document.getElementById('btn-atr').addEventListener('click', async () => {
+  const tf = document.getElementById('atr-tf').value;
+  const sym = document.querySelector('[name="symbol"]').value || 'PEPE/USDT';
+  const out = document.getElementById('atr-result');
+  out.textContent = 'Computing...';
+  try {
+    const r = await api(`/api/atr?symbol=${encodeURIComponent(sym)}&timeframe=${tf}`);
+    if (r.error) {
+      out.textContent = 'Error: ' + r.error;
+    } else {
+      out.innerHTML = `ATR(14, ${r.timeframe}) = <strong>${fmt(r.atr, 10)}</strong> (<strong>${r.atr_pct.toFixed(3)}%</strong>) · close ${fmt(r.last_close, 10)}`;
+    }
+  } catch (e) {
+    out.textContent = 'Error: ' + e;
+  }
+});
+
+// -----------------------------------------------------------------
+// Tables
+// -----------------------------------------------------------------
 async function loadTrades() {
   const mode = (document.querySelector('[name="mode"]') || {}).value || 'paper';
   try {
@@ -200,10 +372,31 @@ async function loadStates() {
   } catch (e) { console.error('state failed', e); }
 }
 
+async function loadSymbols() {
+  try {
+    const items = await api('/api/symbols');
+    const tbody = document.querySelector('#symbols-table tbody');
+    if (!Array.isArray(items) || items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan=5>No trading history</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map(it => `
+      <tr>
+        <td>${it.symbol}</td>
+        <td>${it.mode}</td>
+        <td>${it.trades}</td>
+        <td>${it.cycles}</td>
+        <td>${(it.last_activity||'').slice(0, 19)}</td>
+      </tr>
+    `).join('');
+  } catch (e) { console.error('symbols failed', e); }
+}
+
 async function refreshAll() {
   await loadStatus();
   await loadTrades();
   await loadStates();
+  await loadSymbols();
 }
 
 // Init

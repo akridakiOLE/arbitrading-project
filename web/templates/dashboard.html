@@ -17,6 +17,31 @@
 
 <main>
 
+  <!-- Price highlight (B3a) -->
+  <section class="panel price-hero">
+    <div class="price-hero-left">
+      <span class="price-hero-label">
+        <span class="lock-icon" title="Readonly display — άλλαξε από Configuration panel">&#128274;</span>
+        <span id="m-symbol-big">-</span>
+      </span>
+      <span id="m-price-big" class="price-hero-value">-</span>
+    </div>
+    <div class="price-hero-right">
+      <div class="trigger-box" id="trigger-buy">
+        <div class="trigger-label">BUY trigger</div>
+        <div class="trigger-value" id="t-buy-val">-</div>
+        <div class="trigger-distance"><span id="t-buy-dist">-</span>% μακριά</div>
+        <div class="trigger-bar"><div class="trigger-bar-fill buy" id="t-buy-bar" style="width:0%"></div></div>
+      </div>
+      <div class="trigger-box" id="trigger-sell">
+        <div class="trigger-label">SELL trigger</div>
+        <div class="trigger-value" id="t-sell-val">-</div>
+        <div class="trigger-distance"><span id="t-sell-dist">-</span>% μακριά</div>
+        <div class="trigger-bar"><div class="trigger-bar-fill sell" id="t-sell-bar" style="width:0%"></div></div>
+      </div>
+    </div>
+  </section>
+
   <!-- Live status panel -->
   <section class="panel">
     <h2>Live Status</h2>
@@ -34,6 +59,7 @@
       <div class="metric"><span class="metric-label">has_bought</span> <span id="m-hb">-</span></div>
       <div class="metric"><span class="metric-label">Active BUY %</span><span id="m-apb">-</span></div>
     </div>
+    <div id="resume-info" class="resume-info"></div>
   </section>
 
   <!-- Balances -->
@@ -55,52 +81,167 @@
   <section class="panel">
     <h2>Controls</h2>
     <div class="controls">
-      <button id="btn-start"  class="btn btn-green"  disabled>Start</button>
-      <button id="btn-stop"   class="btn btn-red"    disabled>Stop</button>
-      <button id="btn-resset" class="btn btn-orange" disabled>Resset_Invest (Promote 3)</button>
+      <button id="btn-start"  class="btn btn-green"  disabled
+        title="Ξεκινά το bot. Αν υπάρχει προηγούμενο state ΚΑΙ το 'Resume from last state' είναι ON ΚΑΙ symbol/mode δεν άλλαξαν → συνεχίζει από εκεί που ήταν. Αλλιώς fresh start.">Start</button>
+      <button id="btn-stop"   class="btn btn-red"    disabled
+        title="Soft Stop: Σταματά το bot. ΔΕΝ κλείνει θέσεις στο KuCoin — τις χειρίζεσαι χειροκίνητα.">Soft Stop</button>
+      <button id="btn-resset" class="btn btn-orange" disabled
+        title="Promote 3: Ρευστοποιεί BASE_COIN θέσεις. Τα VIP coins ΔΕΝ αγγίζονται.">Resset_Invest (Promote 3)</button>
+      <button id="btn-apply-live" class="btn btn-blue" disabled
+        title="Εφαρμόζει τις τρέχουσες ρυθμίσεις live (LIVE + NEXT_CYCLE).">Apply Settings (Live)</button>
     </div>
     <div id="controls-msg" class="msg"></div>
+    <div id="pending-info" class="pending-info"></div>
   </section>
 
   <!-- Config -->
   <section class="panel">
-    <h2>Configuration</h2>
+    <h2>Configuration
+      <span class="cat-legend">
+        <span class="cat-badge cat-live">LIVE</span> εφαρμόζεται άμεσα &nbsp;·&nbsp;
+        <span class="cat-badge cat-next">NEXT CYCLE</span> στο επόμενο SETUP &nbsp;·&nbsp;
+        <span class="cat-badge cat-restart">RESTART</span> απαιτεί Soft Stop + Start
+      </span>
+    </h2>
     <form id="cfg-form" class="cfg-form">
-      <div class="cfg-row">
-        <label>Mode</label>
+
+      <div class="cfg-row" data-cat="RESTART">
+        <label>Mode <span class="cat-badge cat-restart" title="Αλλάζει μόνο με Soft Stop + Start">RESTART</span></label>
         <select name="mode">
           <option value="paper">paper (ασφαλές)</option>
           <option value="live">live (πραγματικές εντολές)</option>
         </select>
       </div>
-      <div class="cfg-row"><label>Symbol</label>                <input name="symbol"></div>
-      <div class="cfg-row"><label>start_base_coin</label>       <input name="start_base_coin" type="number" step="any"></div>
-      <div class="cfg-row"><label>scale_base_coin</label>       <input name="scale_base_coin" type="number" step="any"></div>
-      <div class="cfg-row"><label>min_profit_percent</label>    <input name="min_profit_percent" type="number" step="any"></div>
-      <div class="cfg-row"><label>step_point</label>            <input name="step_point" type="number" step="any"></div>
-      <div class="cfg-row"><label>trailing_stop</label>         <input name="trailing_stop" type="number" step="any"></div>
-      <div class="cfg-row"><label>margin_level</label>          <input name="margin_level" type="number" step="any"></div>
-      <div class="cfg-row">
-        <label>promote</label>
+
+      <div class="cfg-row" data-cat="RESTART">
+        <label>Symbol <span class="cat-badge cat-restart">RESTART</span></label>
+        <div class="symbol-row">
+          <select name="symbol_preset" id="symbol-preset">
+            <option value="">— custom —</option>
+            <option>PEPE/USDT</option>
+            <option>DOGE/USDT</option>
+            <option>SHIB/USDT</option>
+            <option>BTC/USDT</option>
+            <option>ETH/USDT</option>
+            <option>SOL/USDT</option>
+            <option>XRP/USDT</option>
+            <option>ADA/USDT</option>
+            <option>AVAX/USDT</option>
+            <option>LINK/USDT</option>
+          </select>
+          <input name="symbol" placeholder="PEPE/USDT">
+          <button type="button" id="btn-check-symbol" class="btn-mini" title="Ελέγχει ότι το symbol υπάρχει στο KuCoin">Check</button>
+        </div>
+        <div id="symbol-check-msg" class="msg-inline"></div>
+      </div>
+
+      <div class="cfg-row" data-cat="RESTART">
+        <label>start_base_coin <span class="cat-badge cat-restart">RESTART</span></label>
+        <input name="start_base_coin" type="number" step="any">
+      </div>
+
+      <div class="cfg-row" data-cat="NEXT_CYCLE">
+        <label>scale_base_coin <span class="cat-badge cat-next">NEXT CYCLE</span></label>
+        <input name="scale_base_coin" type="number" step="any">
+      </div>
+
+      <div class="cfg-row" data-cat="LIVE">
+        <label>min_profit_percent <span class="cat-badge cat-live">LIVE</span></label>
+        <input name="min_profit_percent" type="number" step="any">
+      </div>
+
+      <div class="cfg-row" data-cat="LIVE">
+        <label>step_point <span class="cat-badge cat-live">LIVE</span></label>
+        <input name="step_point" type="number" step="any">
+      </div>
+
+      <div class="cfg-row" data-cat="LIVE">
+        <label>trailing_stop <span class="cat-badge cat-live">LIVE</span></label>
+        <input name="trailing_stop" type="number" step="any">
+      </div>
+
+      <div class="cfg-row" data-cat="LIVE">
+        <label>margin_level <span class="cat-badge cat-live">LIVE</span></label>
+        <input name="margin_level" type="number" step="any">
+      </div>
+
+      <div class="cfg-row" data-cat="NEXT_CYCLE">
+        <label>promote <span class="cat-badge cat-next">NEXT CYCLE</span></label>
         <select name="promote">
           <option value="1">1 — Up_Investment</option>
           <option value="2">2 — Buy_Choice_Coins</option>
           <option value="3">3 — Resset_Invest (manual)</option>
         </select>
       </div>
-      <div class="cfg-row">
-        <label>second_profit_enabled</label>
+
+      <div class="cfg-row" data-cat="LIVE">
+        <label>second_profit_enabled <span class="cat-badge cat-live">LIVE</span></label>
         <select name="second_profit_enabled">
           <option value="false">OFF (default)</option>
           <option value="true">ON</option>
         </select>
       </div>
-      <div class="cfg-row"><label>second_profit_percent</label> <input name="second_profit_percent" type="number" step="any"></div>
-      <div class="cfg-row"><label>poll_interval (s)</label>     <input name="poll_interval" type="number" step="any"></div>
+
+      <div class="cfg-row" data-cat="LIVE">
+        <label>second_profit_percent <span class="cat-badge cat-live">LIVE</span></label>
+        <input name="second_profit_percent" type="number" step="any">
+      </div>
+
+      <div class="cfg-row" data-cat="RESTART">
+        <label>poll_interval (s) <span class="cat-badge cat-restart">RESTART</span></label>
+        <input name="poll_interval" type="number" step="any">
+      </div>
+
+      <div class="cfg-row" data-cat="RESTART">
+        <label>Resume from last state <span class="cat-badge cat-restart">START-TIME</span></label>
+        <select name="resume_from_state">
+          <option value="true">ON — συνεχίζει από εκεί που ήταν (default)</option>
+          <option value="false">OFF — fresh start</option>
+        </select>
+      </div>
+
     </form>
     <div class="cfg-notice">
-      Ρυθμίσεις αποθηκεύονται κατά το Start. Για να αλλάξεις ρυθμίσεις τύπου (*)
-      ενώ τρέχει, κάνε Stop, άλλαξε, Start ξανά.
+      Τα <strong>LIVE</strong> πεδία εφαρμόζονται αμέσως όταν πατήσεις <strong>Apply Settings</strong>.
+      Τα <strong>NEXT CYCLE</strong> εφαρμόζονται πριν το επόμενο SETUP.
+      Τα <strong>RESTART</strong> εφαρμόζονται μόνο στο Start.
+    </div>
+  </section>
+
+  <!-- ATR Panel (B3c) -->
+  <section class="panel">
+    <h2>ATR (Average True Range) — on-demand</h2>
+    <div class="atr-controls">
+      <label>Timeframe:</label>
+      <select id="atr-tf">
+        <option value="1m">1m</option>
+        <option value="5m">5m</option>
+        <option value="15m">15m</option>
+        <option value="1h" selected>1h</option>
+        <option value="4h">4h</option>
+        <option value="1d">1d</option>
+      </select>
+      <button id="btn-atr" class="btn-mini" type="button">Compute ATR</button>
+      <span id="atr-result" class="atr-result">—</span>
+    </div>
+    <div class="atr-hint">
+      Η ATR βοηθά στην επιλογή <code>step_point</code> και <code>min_profit_percent</code> ανά ζεύγος.
+      Δεν τρέχει αυτόματα — πάτα <em>Compute</em> όταν θες νέα τιμή.
+    </div>
+  </section>
+
+  <!-- Traded Symbols History (A4) -->
+  <section class="panel">
+    <h2>Traded Symbols History</h2>
+    <div class="table-wrap">
+      <table id="symbols-table">
+        <thead>
+          <tr>
+            <th>Symbol</th><th>Mode</th><th>Trades</th><th>Cycles</th><th>Last Activity</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
   </section>
 

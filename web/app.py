@@ -112,6 +112,85 @@ def create_app() -> Flask:
     def api_config():
         return jsonify(get_manager().load_config())
 
+    @app.route("/api/config/categories")
+    @login_required
+    def api_config_categories():
+        """Επιστρέφει για κάθε παράμετρο την κατηγορία (LIVE/NEXT_CYCLE/RESTART)."""
+        return jsonify(get_manager().get_param_categories())
+
+    @app.route("/api/config/update", methods=["POST"])
+    @login_required
+    def api_config_update():
+        """Εφαρμόζει partial config updates με βάση τις κατηγορίες."""
+        updates = request.get_json() or {}
+        return jsonify(get_manager().update_config(updates))
+
+    @app.route("/api/symbols")
+    @login_required
+    def api_symbols():
+        """Traded symbols history από paper_trades.db + live_trades.db."""
+        result = []
+        for mode, db_name, table in [("paper", "paper_trades.db", "paper_trades"),
+                                     ("live",  "live_trades.db",  "live_trades")]:
+            if not Path(db_name).exists():
+                continue
+            try:
+                conn = sqlite3.connect(db_name)
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    f"SELECT symbol, "
+                    f"       COUNT(*) AS trades, "
+                    f"       SUM(CASE WHEN action='CLOSING_SELL' THEN 1 ELSE 0 END) AS cycles, "
+                    f"       MAX(ts_iso) AS last_activity "
+                    f"FROM {table} GROUP BY symbol ORDER BY last_activity DESC"
+                ).fetchall()
+                conn.close()
+                for r in rows:
+                    result.append({
+                        "symbol":        r["symbol"],
+                        "mode":          mode,
+                        "trades":        r["trades"],
+                        "cycles":        r["cycles"] or 0,
+                        "last_activity": r["last_activity"],
+                    })
+            except Exception as e:
+                logger.warning(f"api_symbols {mode}: {e}")
+        return jsonify(result)
+
+    @app.route("/api/atr")
+    @login_required
+    def api_atr():
+        """On-demand ATR(14) για τρέχον symbol σε επιλεγμένο timeframe."""
+        symbol    = request.args.get("symbol",    "PEPE/USDT")
+        timeframe = request.args.get("timeframe", "1h")
+        try:
+            import ccxt
+            ex = ccxt.kucoin()
+            # 15 candles αρκούν για ATR(14), παίρνουμε 30 για ασφάλεια
+            ohlcv = ex.fetch_ohlcv(symbol, timeframe=timeframe, limit=30)
+            if not ohlcv or len(ohlcv) < 15:
+                return jsonify({"error": "not enough candles"}), 400
+            # TR = max(high-low, |high-prev_close|, |low-prev_close|)
+            trs = []
+            for i in range(1, len(ohlcv)):
+                h = ohlcv[i][2]; l = ohlcv[i][3]; pc = ohlcv[i-1][4]
+                tr = max(h - l, abs(h - pc), abs(l - pc))
+                trs.append(tr)
+            period = 14
+            atr = sum(trs[-period:]) / period
+            last_close = ohlcv[-1][4]
+            pct = (atr / last_close * 100.0) if last_close > 0 else 0.0
+            return jsonify({
+                "symbol":     symbol,
+                "timeframe":  timeframe,
+                "atr":        atr,
+                "atr_pct":    pct,
+                "last_close": last_close,
+                "candles":    len(ohlcv),
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/trades")
     @login_required
     def api_trades():

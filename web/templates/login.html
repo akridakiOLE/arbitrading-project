@@ -10,12 +10,34 @@
     <h1>Arbitrading Bot</h1>
     <form method="POST" action="/login">
       <label for="password">Password</label>
-      <input type="password" name="password" id="password" autofocus required>
-      <button type="submit">Login</button>
+      <div class="login-password-wrap">
+        <input type="password" name="password" id="password" autofocus required>
+        <button type="button" class="login-password-toggle" id="pwd-toggle"
+                aria-label="Toggle password visibility" title="Show/hide password">&#128065;</button>
+      </div>
+      <button type="submit" class="login-submit">Login</button>
       {% if error %}
         <div class="error">{{ error }}</div>
       {% endif %}
     </form>
   </div>
+  <script>
+    (function () {
+      var btn = document.getElementById('pwd-toggle');
+      var inp = document.getElementById('password');
+      if (!btn || !inp) return;
+      btn.addEventListener('click', function () {
+        if (inp.type === 'password') {
+          inp.type = 'text';
+          btn.innerHTML = '&#128581;';   // "no good" face = hidden-eye stand-in
+          btn.title = 'Hide password';
+        } else {
+          inp.type = 'password';
+          btn.innerHTML = '&#128065;';   // eye
+          btn.title = 'Show password';
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-/* Arbitrading Bot — Dark theme dashboard */
+/* Arbitrading Bot — Dark theme dashboard (v5.1) */
 
 * { box-sizing: border-box; }
 
@@ -42,9 +42,18 @@ main {
 .panel h2 {
   margin: 0 0 14px 0;
   font-size: 16px;
-  color: #9aa4b1;
+  color: #f0f0f0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  font-weight: 600;
+}
+.cat-legend {
+  float: right;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #9aa4b1;
 }
 
 .badge {
@@ -65,7 +74,84 @@ main {
 }
 .logout:hover { color: #fff; }
 
-/* Metrics grid */
+/* ---------- Price hero ---------- */
+.price-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.price-hero-left { display: flex; flex-direction: column; gap: 6px; }
+.price-hero-label {
+  display: flex; align-items: center; gap: 8px;
+  color: #f0f0f0;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.lock-icon {
+  color: #6b7885;
+  font-size: 12px;
+  cursor: help;
+}
+.price-hero-value {
+  color: #4fc3f7;
+  font-size: 34px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}
+.price-hero-right {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  flex: 1 1 500px;
+  max-width: 720px;
+}
+.trigger-box {
+  background: #0f1419;
+  border: 1px solid #1f2933;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.trigger-label {
+  color: #f0f0f0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+}
+#trigger-buy  .trigger-label { color: #81c784; }
+#trigger-sell .trigger-label { color: #ef9a9a; }
+.trigger-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e6e6e6;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+.trigger-distance {
+  color: #9aa4b1;
+  font-size: 12px;
+  margin: 3px 0 6px 0;
+}
+.trigger-bar {
+  background: #1f2933;
+  border-radius: 3px;
+  height: 6px;
+  overflow: hidden;
+}
+.trigger-bar-fill {
+  height: 100%;
+  transition: width 0.5s ease;
+}
+.trigger-bar-fill.buy  { background: linear-gradient(90deg, #2e7d32, #66bb6a); }
+.trigger-bar-fill.sell { background: linear-gradient(90deg, #c62828, #ef5350); }
+
+/* ---------- Metrics grid ---------- */
 .grid-4 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -80,8 +166,9 @@ main {
   flex-direction: column;
 }
 .metric-label {
-  color: #6b7885;
+  color: #f0f0f0;
   font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 4px;
@@ -93,7 +180,15 @@ main {
   word-break: break-all;
 }
 
-/* Controls */
+.resume-info {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #9aa4b1;
+}
+.resume-info.resumed { color: #81c784; }
+.resume-info.fresh   { color: #ffb74d; }
+
+/* ---------- Controls ---------- */
 .controls {
   display: flex;
   gap: 10px;
@@ -114,6 +209,19 @@ main {
 .btn-green  { background: #2e7d32; }
 .btn-red    { background: #c62828; }
 .btn-orange { background: #ef6c00; }
+.btn-blue   { background: #1976d2; }
+
+.btn-mini {
+  padding: 6px 12px;
+  background: #37424f;
+  color: #f0f0f0;
+  border: 1px solid #1f2933;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-mini:hover { background: #455162; }
 
 .msg {
   margin-top: 12px;
@@ -125,26 +233,58 @@ main {
 .msg.ok    { background: #1b5e20; color: #e8f5e9; }
 .msg.error { background: #b71c1c; color: #ffebee; }
 
-/* Config form */
+.pending-info {
+  display: none;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #4a2c00;
+  border-left: 3px solid #ef6c00;
+  color: #ffe0b2;
+  font-size: 12px;
+  border-radius: 4px;
+}
+.pending-info.visible { display: block; }
+
+.msg-inline {
+  margin-top: 6px;
+  font-size: 12px;
+  min-height: 16px;
+}
+.msg-inline.ok    { color: #81c784; }
+.msg-inline.error { color: #ef9a9a; }
+
+/* ---------- Config form ---------- */
 .cfg-form {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 14px;
 }
 .cfg-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border-left: 3px solid transparent;
+  background: #0f1419;
 }
+.cfg-row[data-cat="LIVE"]       { border-left-color: #2e7d32; }
+.cfg-row[data-cat="NEXT_CYCLE"] { border-left-color: #ef6c00; }
+.cfg-row[data-cat="RESTART"]    { border-left-color: #c62828; }
+
 .cfg-row label {
-  color: #6b7885;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #f0f0f0;
   font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 .cfg-row input,
 .cfg-row select {
-  background: #0f1419;
+  background: #11161c;
   border: 1px solid #1f2933;
   color: #e6e6e6;
   padding: 8px 10px;
@@ -157,20 +297,78 @@ main {
   outline: none;
   border-color: #4fc3f7;
 }
+
+/* Category badges */
+.cat-badge {
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #0f1419;
+}
+.cat-live    { background: #66bb6a; }
+.cat-next    { background: #ffb74d; }
+.cat-restart { background: #ef5350; color: #fff; }
+
+.symbol-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+}
+
 .cfg-notice {
-  margin-top: 12px;
+  margin-top: 14px;
   padding: 10px 12px;
   background: #1f2933;
-  border-left: 3px solid #ef6c00;
-  color: #c2d1e0;
+  border-left: 3px solid #4fc3f7;
+  color: #e6e6e6;
   font-size: 12px;
   border-radius: 4px;
 }
+.cfg-notice strong { color: #f0f0f0; }
 
-/* Tables */
-.table-wrap {
-  overflow-x: auto;
+/* ---------- ATR panel ---------- */
+.atr-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
+.atr-controls label {
+  color: #f0f0f0;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.atr-controls select {
+  background: #11161c;
+  border: 1px solid #1f2933;
+  color: #e6e6e6;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.atr-result {
+  color: #e6e6e6;
+  font-size: 13px;
+  margin-left: 10px;
+}
+.atr-hint {
+  margin-top: 10px;
+  color: #9aa4b1;
+  font-size: 12px;
+}
+.atr-hint code {
+  background: #11161c;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #4fc3f7;
+  font-size: 12px;
+}
+
+/* ---------- Tables ---------- */
+.table-wrap { overflow-x: auto; }
 table {
   width: 100%;
   border-collapse: collapse;
@@ -182,8 +380,8 @@ th, td {
   border-bottom: 1px solid #1f2933;
 }
 th {
-  color: #6b7885;
-  font-weight: 600;
+  color: #f0f0f0;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-size: 11px;
@@ -191,7 +389,7 @@ th {
 }
 tr:hover td { background: #1a222b; }
 
-/* Login page */
+/* ---------- Login page ---------- */
 .login-body {
   display: flex;
   align-items: center;
@@ -208,23 +406,41 @@ tr:hover td { background: #1a222b; }
 }
 .login-box h1 { margin: 0 0 24px 0; color: #4fc3f7; font-size: 22px; }
 .login-box label {
-  color: #6b7885;
+  color: #f0f0f0;
   font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
   display: block;
   margin-bottom: 6px;
 }
-.login-box input {
+.login-password-wrap {
+  position: relative;
+  margin-bottom: 16px;
+}
+.login-password-wrap input {
   width: 100%;
   background: #0f1419;
   border: 1px solid #1f2933;
   color: #e6e6e6;
-  padding: 10px 12px;
+  padding: 10px 40px 10px 12px;
   border-radius: 4px;
-  margin-bottom: 16px;
   font-size: 14px;
 }
-.login-box button {
+.login-password-toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #6b7885;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 4px;
+  line-height: 1;
+}
+.login-password-toggle:hover { color: #e6e6e6; }
+.login-box button.login-submit {
   width: 100%;
   padding: 10px;
   background: #4fc3f7;
@@ -248,4 +464,7 @@ tr:hover td { background: #1a222b; }
 @media (max-width: 800px) {
   .grid-4 { grid-template-columns: repeat(2, 1fr); }
   .cfg-form { grid-template-columns: 1fr; }
+  .symbol-row { grid-template-columns: 1fr; }
+  .price-hero-right { grid-template-columns: 1fr; }
+  .price-hero-value { font-size: 24px; }
 }

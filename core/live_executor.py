@@ -294,6 +294,36 @@ class LiveExecutor:
             "margin_ratio":  round(ratio, 4),
         }
 
+    def get_balance_dict(self) -> dict:
+        """Raw balance fields για state persistence (parity με PaperExecutor)."""
+        return {
+            "base_coin":     self.base_coin,
+            "usdt":          self.usdt,
+            "usdt_debt":     self.usdt_debt,
+            "base_debt":     self.base_debt,
+            "vip_holdings":  dict(self.vip_holdings),
+            "vip_debt_usdt": self.vip_debt_usdt,
+        }
+
+    def restore_balances(self, d: dict) -> None:
+        """Εφαρμόζει saved balances στον LiveExecutor.
+
+        ΠΡΟΣΟΧΗ: Σε live mode, οι ΠΡΑΓΜΑΤΙΚΟΙ αριθμοί είναι στο KuCoin account.
+        Το restore εδώ είναι καθαρά για τα tracking fields του executor ώστε
+        η strategy να ξέρει τι «πιστεύει» ότι έχει. Δεν αλλάζει τίποτα στο
+        exchange. Για reconciliation με το KuCoin account γίνεται στη μελλοντική
+        Φάση 5 (live balance sync)."""
+        if not isinstance(d, dict):
+            return
+        if "base_coin"     in d: self.base_coin     = float(d["base_coin"])
+        if "usdt"          in d: self.usdt          = float(d["usdt"])
+        if "usdt_debt"     in d: self.usdt_debt     = float(d["usdt_debt"])
+        if "base_debt"     in d: self.base_debt     = float(d["base_debt"])
+        if "vip_holdings"  in d: self.vip_holdings  = dict(d["vip_holdings"] or {})
+        if "vip_debt_usdt" in d: self.vip_debt_usdt = float(d["vip_debt_usdt"])
+        logger.info(f"[LiveExecutor] Restored tracking balances | base={self.base_coin} | "
+                    f"usdt={self.usdt} | debt={self.usdt_debt}")
+
     def close(self) -> None:
         if self._db:
             self._db.close()

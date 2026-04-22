@@ -273,6 +273,31 @@ class PaperExecutor:
             "margin_ratio":  round(ratio, 4),
         }
 
+    def get_balance_dict(self) -> dict:
+        """Raw (μη-στρογγυλοποιημένα) balance fields για state persistence.
+        Πρέπει να περιλαμβάνει ΟΛΑ τα mutable balance fields του executor."""
+        return {
+            "base_coin":     self.base_coin,
+            "usdt":          self.usdt,
+            "usdt_debt":     self.usdt_debt,
+            "base_debt":     self.base_debt,
+            "vip_holdings":  dict(self.vip_holdings),
+            "vip_debt_usdt": self.vip_debt_usdt,
+        }
+
+    def restore_balances(self, d: dict) -> None:
+        """Εφαρμόζει saved balances πάνω στον executor (resume from state)."""
+        if not isinstance(d, dict):
+            return
+        if "base_coin"     in d: self.base_coin     = float(d["base_coin"])
+        if "usdt"          in d: self.usdt          = float(d["usdt"])
+        if "usdt_debt"     in d: self.usdt_debt     = float(d["usdt_debt"])
+        if "base_debt"     in d: self.base_debt     = float(d["base_debt"])
+        if "vip_holdings"  in d: self.vip_holdings  = dict(d["vip_holdings"] or {})
+        if "vip_debt_usdt" in d: self.vip_debt_usdt = float(d["vip_debt_usdt"])
+        logger.info(f"[PaperExecutor] Restored balances | base={self.base_coin} | "
+                    f"usdt={self.usdt} | debt={self.usdt_debt} | borrow={self.base_debt}")
+
     def close(self) -> None:
         if self._db:
             self._db.close()

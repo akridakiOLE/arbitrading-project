@@ -1,17 +1,21 @@
 """
-core/state_persistence.py — SQLite BotMemory snapshot/restore (v4 Φάση 3γ).
+core/state_persistence.py — SQLite BotMemory + executor balances snapshot/restore.
 
-Κρατάει snapshots της BotMemory σε SQLite ώστε:
+Κρατάει snapshots της πλήρους bot κατάστασης σε SQLite ώστε:
   - Αν το process πέσει, μπορούμε να το ξανασηκώσουμε στην ίδια κατάσταση
+  - Στο Stop → Start, το bot συνεχίζει από εκεί που ήταν (Resume)
   - Έχουμε historical audit trail του state machine
 
-Design:
-  - Κάθε snapshot είναι ένα JSON blob με όλα τα BotMemory fields + BotState
-  - Αποθηκεύεται αυτόματα μετά από:
-    - Κάθε SETUP completion
-    - Κάθε BUY / REPAY_SELL / CLOSING_SELL trigger
-    - Κάθε MARGIN_PROTECT / RESSET_INVEST
-  - restore_latest() επαναφέρει την πιο πρόσφατη εγγραφή
+Snapshot schema (v5.1 extended):
+  Κάθε snapshot είναι ένα JSON blob με τα εξής top-level keys:
+    - memory:    BotMemory fields (όπως πριν)
+    - balances:  Executor balances (base_coin, usdt, debts, vip_*)
+    - meta:      tick_count, symbol, mode (για fresh-start decisions)
+
+Backward compatibility:
+  Παλιά snapshots χωρίς "memory"/"balances"/"meta" keys αντιμετωπίζονται ως
+  "legacy flat" (όλα τα fields στο top level είναι BotMemory). Σε αυτή την
+  περίπτωση ΔΕΝ γίνεται balance restore.
 """
 
 import json
@@ -52,15 +56,27 @@ class StatePersistence:
         self._db.commit()
 
     def save(self, memory: BotMemory, state: BotState,
-             event: str, notes: str = "") -> None:
-        """Serialize BotMemory σε JSON και αποθηκεύει."""
+             event: str, notes: str = "",
+             executor_balances: Optional[dict] = None,
+             meta: Optional[dict] = None) -> None:
+        """Serialize πλήρες state σε JSON και αποθηκεύει.
+
+        executor_balances: dict από executor.get_balance_dict() — optional αλλά
+                           απαραίτητο για σωστό Resume.
+        meta: dict με {symbol, mode, tick_count} — optional αλλά απαραίτητο
+              για σωστή fresh-start απόφαση."""
         try:
-            d = asdict(memory)
-            # datetime fields -> iso string
-            ts = d.get('current_timestamp')
+            mem_dict = asdict(memory)
+            ts = mem_dict.get('current_timestamp')
             if ts is not None and hasattr(ts, 'isoformat'):
-                d['current_timestamp'] = ts.isoformat()
-            memory_json = json.dumps(d, default=str)
+                mem_dict['current_timestamp'] = ts.isoformat()
+
+            full_state = {
+                "memory":   mem_dict,
+                "balances": executor_balances or {},
+                "meta":     meta or {},
+            }
+            memory_json = json.dumps(full_state, default=str)
         except Exception as e:
             logger.warning(f"[StatePersistence] serialize failed: {e}")
             return
@@ -77,7 +93,15 @@ class StatePersistence:
 
     def restore_latest(self) -> Optional[dict]:
         """Επιστρέφει το πιο πρόσφατο state ή None αν δεν υπάρχει.
-        Returns: {'state': str, 'memory': dict, 'ts_iso': str, 'event': str}"""
+
+        Returns:
+          {'state':    str,
+           'memory':   dict (BotMemory fields),
+           'balances': dict (executor balances) | {} (αν legacy snapshot),
+           'meta':     dict ({symbol, mode, tick_count}) | {} (αν legacy),
+           'ts_iso':   str,
+           'event':    str}
+        """
         cur = self._db.cursor()
         row = cur.execute("""
             SELECT ts_iso, event, state, memory_json
@@ -89,24 +113,45 @@ class StatePersistence:
             return None
         ts, event, state, mem_json = row
         try:
-            memory_dict = json.loads(mem_json)
+            parsed = json.loads(mem_json)
         except Exception as e:
             logger.error(f"[StatePersistence] restore deserialize failed: {e}")
             return None
-        return {'ts_iso': ts, 'event': event, 'state': state, 'memory': memory_dict}
+
+        # Υποστήριξη 2 schemas: νέο (nested) vs legacy (flat).
+        if isinstance(parsed, dict) and "memory" in parsed:
+            memory_dict   = parsed.get("memory")   or {}
+            balances_dict = parsed.get("balances") or {}
+            meta_dict     = parsed.get("meta")     or {}
+        else:
+            # Legacy flat: όλο το dict είναι BotMemory
+            memory_dict   = parsed if isinstance(parsed, dict) else {}
+            balances_dict = {}
+            meta_dict     = {}
+
+        return {
+            'ts_iso':   ts,
+            'event':    event,
+            'state':    state,
+            'memory':   memory_dict,
+            'balances': balances_dict,
+            'meta':     meta_dict,
+        }
 
     def apply_to_memory(self, memory_dict: dict, target: BotMemory) -> None:
         """Εφαρμόζει ένα restored dict πάνω σε BotMemory instance.
-        ΠΡΟΣΟΧΗ: skip fields που δεν υπάρχουν στην τρέχουσα BotMemory (schema compatibility)."""
+        Skip fields που δεν υπάρχουν στην τρέχουσα BotMemory (schema compatibility)."""
         valid_fields = {f.name for f in fields(BotMemory)}
+        applied = 0
         for key, value in memory_dict.items():
             if key not in valid_fields:
                 continue
-            # current_timestamp: skip (θα ανατεθεί από το πρώτο tick)
             if key == 'current_timestamp':
+                # Θα ανατεθεί από το πρώτο tick
                 continue
             setattr(target, key, value)
-        logger.info(f"[StatePersistence] Applied {len(valid_fields & set(memory_dict.keys()))} fields")
+            applied += 1
+        logger.info(f"[StatePersistence] Applied {applied}/{len(valid_fields)} memory fields")
 
     def close(self) -> None:
         if self._db:
