@@ -259,6 +259,13 @@ class BotManager:
         prev_symbol = meta.get("symbol")
         prev_mode   = meta.get("mode")
 
+        # v5.2: Legacy snapshots (pre-v5.1) δεν έχουν meta/balances. Δεν
+        # μπορούμε να επαληθεύσουμε symbol/mode, ούτε έχουμε balances να
+        # κάνουμε restore — άρα force Fresh Start αντί για ημιτελές resume.
+        if not meta:
+            return {"decision": "fresh",
+                    "reason": "legacy snapshot without meta (pre-v5.1) — cannot resume safely"}
+
         if prev_symbol and prev_symbol != self._symbol:
             return {"decision": "fresh",
                     "reason": f"symbol changed ({prev_symbol} -> {self._symbol})"}

@@ -827,9 +827,11 @@ class ArbitradingV2:
         return {
             "state":                   self.state.value,
             "cycle_count":             m.cycle_count,
-            "reference_price":         round(m.reference_price, 6),
-            "buy_price":               round(m.buy_price, 6),
-            "sel_price":               round(m.sel_price, 6),
+            # v5.2: price fields σε 10 δεκαδικά — τα 6 δεκαδικά έχαναν
+            # σημαντικά ψηφία σε low-priced coins (π.χ. PEPE ~3e-6 → 4e-6)
+            "reference_price":         round(m.reference_price, 10),
+            "buy_price":               round(m.buy_price, 10),
+            "sel_price":               round(m.sel_price, 10),
             "total_base_coin":         round(m.total_base_coin, 4),
             "borrow_base_coin":        round(m.borrow_base_coin, 4),
             "available_usdt":          round(m.available_usdt, 2),
@@ -840,8 +842,8 @@ class ArbitradingV2:
             "sell_trigger_count":      m.sell_trigger_count,
             "buy_activated":           m.buy_activated,
             "sell_activated":          m.sell_activated,
-            "buy_trailing_stop":       round(m.buy_trailing_stop, 6),
-            "sell_trailing_stop":      round(m.sell_trailing_stop, 6),
+            "buy_trailing_stop":       round(m.buy_trailing_stop, 10),
+            "sell_trailing_stop":      round(m.sell_trailing_stop, 10),
             "grand_amount":            round(m.grand_amount, 2),
             "last_vip_coin":           round(m.last_vip_coin, 2),
             "vip_holdings":            dict(m.vip_holdings),
