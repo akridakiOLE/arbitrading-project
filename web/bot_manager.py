@@ -628,15 +628,3 @@ def get_manager() -> BotManager:
     if _instance is None:
         _instance = BotManager()
     return _instance
-self._last_resume_event,
-        }
-
-
-# Module-level singleton
-_instance: Optional[BotManager] = None
-
-def get_manager() -> BotManager:
-    global _instance
-    if _instance is None:
-        _instance = BotManager()
-    return _instance
