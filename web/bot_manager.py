@@ -233,7 +233,9 @@ class BotManager:
             except Exception as e:
                 self._last_error = str(e)
                 logger.exception(f"Start failed: {e}")
-                self._cleanup_locked()
+                # start() απέτυχε — χρησιμοποιούμε START_FAILED αντί για USER_STOP
+                # ώστε να μη μπλοκαριστεί auto-resume σε επόμενο boot
+                self._cleanup_locked(stop_event="START_FAILED")
                 return {"ok": False, "error": str(e)}
 
     def _maybe_resume(self, resume_requested: bool) -> dict:
@@ -321,14 +323,18 @@ class BotManager:
                 self._last_error = str(e)
                 return {"ok": False, "error": str(e)}
 
-    def _cleanup_locked(self) -> None:
-        """Called with self._lock held."""
+    def _cleanup_locked(self, stop_event: str = "USER_STOP") -> None:
+        """Called with self._lock held.
+
+        stop_event σηματοδοτεί ποιος σταμάτησε το bot:
+          - 'USER_STOP' (default) — ρητό Soft Stop από UI → δεν κάνουμε auto-resume
+          - 'STOP' — άλλος λόγος (κλείσιμο service κλπ) → επιτρέπουμε auto-resume"""
         if self.feed:
             try: self.feed.stop()
             except Exception: pass
         if self.state_persistence and self.strategy:
             try:
-                self._save_snapshot("STOP")
+                self._save_snapshot(stop_event)
                 self.state_persistence.close()
             except Exception: pass
         if self.executor:
@@ -424,6 +430,94 @@ class BotManager:
 
     def get_param_categories(self) -> dict:
         return dict(PARAM_CATEGORIES)
+
+    # ----- Auto-Resume on boot -----
+
+    def try_auto_resume(self) -> dict:
+        """Καλείται από τη Flask εκκίνηση. Επιχειρεί να κάνει auto-start αν:
+          - Υπάρχει έγκυρο state snapshot με meta (v5.1+ format)
+          - Το saved mode είναι 'paper' (live ΔΕΝ auto-resumes — απαιτεί manual)
+          - Το τελευταίο event δεν είναι USER_STOP (user explicit stop = respect it)
+          - Το symbol του snapshot ταιριάζει με το saved config
+
+        Safety constraints:
+          - ΠΟΤΕ δεν κάνει auto-start σε live mode (αξιώνει ρητή ανθρώπινη έγκριση)
+          - Αν το bot είναι ήδη running (race condition), skip
+          - Αν οποιαδήποτε ασυνέπεια → log warning και skip
+        """
+        try:
+            with self._lock:
+                if self._running:
+                    return {"auto_started": False, "reason": "already running"}
+
+            cfg = self.load_config()
+            mode   = cfg.get("mode", "paper")
+            symbol = cfg.get("symbol")
+
+            if mode == "live":
+                logger.info("[BotManager] Auto-resume skipped: live mode requires manual Start")
+                return {"auto_started": False, "reason": "live mode — manual Start required"}
+
+            db_path = "live_state.db" if mode == "live" else "paper_state.db"
+            if not Path(db_path).exists():
+                logger.info(f"[BotManager] Auto-resume skipped: {db_path} δεν υπάρχει (καμία προηγ. εκτέλεση)")
+                return {"auto_started": False, "reason": "no state db yet"}
+
+            # Peek latest snapshot χωρίς να αρχικοποιήσουμε StatePersistence εδώ
+            import sqlite3, json
+            try:
+                conn = sqlite3.connect(db_path)
+                row = conn.execute(
+                    "SELECT event, memory_json FROM state_snapshots "
+                    "ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+                conn.close()
+            except Exception as e:
+                logger.warning(f"[BotManager] Auto-resume skipped (DB read error): {e}")
+                return {"auto_started": False, "reason": f"db read error: {e}"}
+
+            if not row:
+                return {"auto_started": False, "reason": "no snapshots"}
+
+            last_event, mem_json = row
+
+            # User-initiated stops → respect the stop, skip auto-resume
+            if last_event == "USER_STOP":
+                logger.info("[BotManager] Auto-resume skipped: last stop was user-initiated")
+                return {"auto_started": False, "reason": "last stop was USER_STOP"}
+
+            try:
+                parsed = json.loads(mem_json)
+            except Exception:
+                return {"auto_started": False, "reason": "snapshot parse error"}
+
+            meta = (parsed.get("meta") if isinstance(parsed, dict) else None) or {}
+            if not meta:
+                logger.info("[BotManager] Auto-resume skipped: legacy snapshot (no meta)")
+                return {"auto_started": False, "reason": "legacy snapshot (no meta)"}
+
+            prev_symbol = meta.get("symbol")
+            prev_mode   = meta.get("mode")
+            if prev_symbol != symbol:
+                logger.info(f"[BotManager] Auto-resume skipped: symbol mismatch ({prev_symbol} vs {symbol})")
+                return {"auto_started": False, "reason": f"symbol mismatch"}
+            if prev_mode != mode:
+                logger.info(f"[BotManager] Auto-resume skipped: mode mismatch ({prev_mode} vs {mode})")
+                return {"auto_started": False, "reason": f"mode mismatch"}
+
+            # Όλα OK → auto-start με resume
+            cfg["resume_from_state"] = True
+            logger.info(f"[BotManager] AUTO-RESUMING on boot: {symbol} {mode} "
+                        f"(last event: {last_event}, tick_count={meta.get('tick_count', '?')})")
+            result = self.start(cfg)
+            if result.get("ok"):
+                return {"auto_started": True, "result": result}
+            else:
+                logger.warning(f"[BotManager] Auto-resume failed at start(): {result.get('error')}")
+                return {"auto_started": False, "reason": f"start() failed: {result.get('error')}"}
+        except Exception as e:
+            logger.exception(f"[BotManager] try_auto_resume exception: {e}")
+            return {"auto_started": False, "reason": f"exception: {e}"}
 
     def _apply_pending_at_setup(self) -> None:
         """Εφαρμόζει pending NEXT_CYCLE αλλαγές πριν από νέο SETUP."""
@@ -523,6 +617,18 @@ class BotManager:
             "last_error":         self._last_error,
             "pending_next_cycle": dict(self._pending_config),
             "last_resume_event":  self._last_resume_event,
+        }
+
+
+# Module-level singleton
+_instance: Optional[BotManager] = None
+
+def get_manager() -> BotManager:
+    global _instance
+    if _instance is None:
+        _instance = BotManager()
+    return _instance
+self._last_resume_event,
         }
 
 

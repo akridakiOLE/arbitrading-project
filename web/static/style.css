@@ -328,6 +328,63 @@ main {
 }
 .cfg-notice strong { color: #f0f0f0; }
 
+/* ---------- VIP Config (Promote 2) ---------- */
+.vip-config-wrap {
+  grid-column: 1 / -1;
+  margin-top: 14px;
+  padding: 14px;
+  background: #0d1218;
+  border: 1px solid #2e7d32;
+  border-radius: 6px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.vip-config-wrap.hidden { display: none; }
+.vip-config-header {
+  grid-column: 1 / -1;
+  color: #66bb6a;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #1f2933;
+}
+.cfg-row-full {
+  grid-column: 1 / -1;
+}
+.vip-config-wrap textarea {
+  background: #11161c;
+  border: 1px solid #1f2933;
+  color: #e6e6e6;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: "Consolas", "Courier New", monospace;
+  resize: vertical;
+  min-height: 90px;
+}
+.vip-config-wrap textarea:focus {
+  outline: none;
+  border-color: #4fc3f7;
+}
+.vip-config-hint {
+  grid-column: 1 / -1;
+  color: #9aa4b1;
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 8px 10px;
+  background: #11161c;
+  border-radius: 4px;
+}
+.vip-config-hint code {
+  background: #0f1419;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #4fc3f7;
+}
+
 /* ---------- ATR panel ---------- */
 .atr-controls {
   display: flex;

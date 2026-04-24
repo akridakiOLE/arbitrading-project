@@ -238,6 +238,20 @@ def create_app() -> Flask:
 app = create_app()
 
 
+# ---------------------------------------------------------------------------
+# Auto-Resume on boot (v5.3):
+# Μόλις φορτώσει το Flask/gunicorn, ελέγχουμε αν πρέπει να κάνουμε auto-start
+# στο bot ώστε να επιβιώνει σε systemctl restart / reboot. Μόνο για paper mode
+# και μόνο αν το τελευταίο stop ΔΕΝ ήταν USER_STOP.
+# ---------------------------------------------------------------------------
+try:
+    from web.bot_manager import get_manager
+    _auto = get_manager().try_auto_resume()
+    logger.info(f"[boot] Auto-resume result: {_auto}")
+except Exception as _e:
+    logger.warning(f"[boot] Auto-resume failed: {_e}")
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s",

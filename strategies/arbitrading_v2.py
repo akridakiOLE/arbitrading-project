@@ -771,7 +771,7 @@ class ArbitradingV2:
             return False
         ratio = total_assets / total_debt
         if ratio <= cfg.margin_level:
-            logger.warning(f"  MARGIN PROTECT\! ratio={ratio:.4f} <= {cfg.margin_level}")
+            logger.warning(f"  MARGIN PROTECT! ratio={ratio:.4f} <= {cfg.margin_level}")
             self.state = BotState.MARGIN_PROTECT
             return True
         return False

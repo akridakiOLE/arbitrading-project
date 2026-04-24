@@ -167,13 +167,81 @@ async function loadConfig() {
     for (const [k, v] of Object.entries(cfg)) {
       const el = form.elements[k];
       if (!el) continue;
-      if (el.type === 'checkbox') el.checked = !!v;
-      else el.value = (typeof v === 'boolean') ? String(v) : v;
+      if (el.type === 'checkbox') {
+        el.checked = !!v;
+      } else if (k === 'vip_coins' && Array.isArray(v)) {
+        el.value = v.join(',');
+      } else if (typeof v === 'object' && v !== null) {
+        // Arrays/objects που ΔΕΝ έχουν ειδική UI αναπαράσταση — skip
+        continue;
+      } else {
+        el.value = (typeof v === 'boolean') ? String(v) : v;
+      }
+    }
+    // VIP special fields (text representation)
+    const pctEl  = form.elements['vip_percentages_text'];
+    const prioEl = form.elements['vip_priority_list_text'];
+    if (pctEl && cfg.vip_percentages && typeof cfg.vip_percentages === 'object') {
+      pctEl.value = Object.entries(cfg.vip_percentages)
+                          .map(([k, v]) => `${k}=${v}`).join('\n');
+    }
+    if (prioEl && Array.isArray(cfg.vip_priority_list)) {
+      prioEl.value = cfg.vip_priority_list.join('\n');
     }
     // Sync symbol preset dropdown με το input
     syncSymbolPreset();
+    // Toggle Promote 2 section based on current promote value
+    togglePromote2Section();
+    updateVipPercentSum();
   } catch (e) {
     console.error('config load failed', e);
+  }
+}
+
+// --- Promote 2 helpers ---
+function togglePromote2Section() {
+  const sel = document.querySelector('[name="promote"]');
+  const sec = document.getElementById('vip-config-section');
+  if (!sel || !sec) return;
+  // Κρατάμε το display:grid από CSS — χρησιμοποιούμε class toggle για visibility.
+  sec.classList.toggle('hidden', sel.value !== '2');
+}
+
+function parseVipPercentages(text) {
+  const out = {};
+  if (!text) return out;
+  text.split(/\r?\n/).forEach(line => {
+    const [k, v] = line.split('=').map(s => s && s.trim());
+    if (k && v !== undefined && v !== '') {
+      const num = parseFloat(v);
+      if (!isNaN(num)) out[k.toUpperCase()] = num;
+    }
+  });
+  return out;
+}
+
+function parseVipPriority(text) {
+  if (!text) return [];
+  return text.split(/\r?\n/).map(s => s.trim().toUpperCase()).filter(Boolean);
+}
+
+function updateVipPercentSum() {
+  const area = document.querySelector('[name="vip_percentages_text"]');
+  const out  = document.getElementById('vip-pct-sum');
+  if (!area || !out) return;
+  const d = parseVipPercentages(area.value);
+  const sum = Object.values(d).reduce((a, b) => a + b, 0);
+  if (Object.keys(d).length === 0) {
+    out.textContent = '';
+    out.className = 'msg-inline';
+    return;
+  }
+  if (Math.abs(sum - 100) < 0.01) {
+    out.textContent = `Sum = ${sum.toFixed(2)} ✓`;
+    out.className = 'msg-inline ok';
+  } else {
+    out.textContent = `Sum = ${sum.toFixed(2)} (χρειάζεται να είναι 100)`;
+    out.className = 'msg-inline error';
   }
 }
 
@@ -191,16 +259,32 @@ function getConfigFromForm() {
   const o = {};
   for (const [k, v] of fd.entries()) {
     if (k === 'symbol_preset') continue;   // UI-only
+    if (k === 'vip_percentages_text' || k === 'vip_priority_list_text') continue; // parsed separately
     o[k] = v;
   }
   // Types
   o.second_profit_enabled = (o.second_profit_enabled === 'true');
   o.resume_from_state     = (o.resume_from_state     === 'true');
   for (const key of ['start_base_coin','scale_base_coin','min_profit_percent','step_point',
-                     'trailing_stop','margin_level','second_profit_percent','poll_interval']) {
+                     'trailing_stop','margin_level','second_profit_percent','poll_interval',
+                     'scale_vip_coin','min_order_usdt']) {
     if (o[key] !== undefined && o[key] !== '') o[key] = parseFloat(o[key]);
   }
   o.promote = parseInt(o.promote || '1', 10);
+
+  // VIP fields parsing
+  // vip_coins: text "BTC,ETH,SOL" → ["BTC","ETH","SOL"]
+  if (typeof o.vip_coins === 'string') {
+    o.vip_coins = o.vip_coins.split(',')
+                             .map(s => s.trim().toUpperCase())
+                             .filter(Boolean);
+  }
+  // vip_percentages: από textarea
+  const pctArea  = form.elements['vip_percentages_text'];
+  const prioArea = form.elements['vip_priority_list_text'];
+  o.vip_percentages   = parseVipPercentages(pctArea ? pctArea.value : '');
+  o.vip_priority_list = parseVipPriority(prioArea ? prioArea.value : '');
+
   return o;
 }
 
@@ -398,6 +482,15 @@ async function refreshAll() {
   await loadStates();
   await loadSymbols();
 }
+
+// Promote 2 event wiring
+(function () {
+  const promoteSel = document.querySelector('[name="promote"]');
+  if (promoteSel) promoteSel.addEventListener('change', togglePromote2Section);
+
+  const pctArea = document.querySelector('[name="vip_percentages_text"]');
+  if (pctArea) pctArea.addEventListener('input', updateVipPercentSum);
+})();
 
 // Init
 loadConfig().then(refreshAll);
