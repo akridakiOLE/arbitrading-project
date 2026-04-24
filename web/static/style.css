@@ -525,3 +525,22 @@ tr:hover td { background: #1a222b; }
   .price-hero-right { grid-template-columns: 1fr; }
   .price-hero-value { font-size: 24px; }
 }
+
+/* ---------- Help icon (?) for VIP field tooltips ---------- */
+.help-q {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  background: #37424f;
+  color: #f0f0f0;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+  margin: 0 4px;
+  vertical-align: middle;
+  text-transform: none;
+}
+.help-q:hover { background: #4fc3f7; color: #0f1419; }

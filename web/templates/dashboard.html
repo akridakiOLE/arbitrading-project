@@ -207,12 +207,12 @@
         <div class="vip-config-header">VIP Config (Promote 2) — Buy_Choice_Coins</div>
 
         <div class="cfg-row cfg-row-full" data-cat="NEXT_CYCLE">
-          <label>VIP coins (comma-separated, π.χ. BTC,ETH,SOL) <span class="cat-badge cat-next">NEXT CYCLE</span></label>
+          <label title="Λίστα VIP coins που αγοράζονται από surplus USDT. Comma-separated. Κάθε ticker πρέπει να υπάρχει στο KuCoin ως /USDT pair.">VIP coins <span class="help-q" title="Αγοράζονται από surplus USDT μετά από κάθε CLOSING_SELL. Δεν πωλούνται ποτέ αυτόματα — μακροχρόνιες επενδύσεις.">?</span> (comma-separated, π.χ. BTC,ETH,SOL) <span class="cat-badge cat-next">NEXT CYCLE</span></label>
           <input name="vip_coins" placeholder="BTC,ETH,SOL">
         </div>
 
         <div class="cfg-row" data-cat="NEXT_CYCLE">
-          <label>vip_allocation_mode <span class="cat-badge cat-next">NEXT CYCLE</span></label>
+          <label title="Πώς κατανέμεται το surplus στα VIP coins.">vip_allocation_mode <span class="help-q" title="percent: χωρίζει το surplus σε ποσοστά. priority: 100% σε ένα coin με rotating εναλλαγή. Auto-switch σε priority αν κάποιο percent split πέσει κάτω από min_order_usdt.">?</span> <span class="cat-badge cat-next">NEXT CYCLE</span></label>
           <select name="vip_allocation_mode">
             <option value="percent">percent — ποσοστό ανά coin (sum=100)</option>
             <option value="priority">priority — rotating κατά σειρά</option>
@@ -220,23 +220,23 @@
         </div>
 
         <div class="cfg-row" data-cat="NEXT_CYCLE">
-          <label>scale_vip_coin <span class="cat-badge cat-next">NEXT CYCLE</span></label>
+          <label title="Multiplier για VIP-based δανεισμό USDT.">scale_vip_coin <span class="help-q" title="Σε κάθε VIP appreciation, ο bot δανείζεται (appreciation × scale) USDT. Παράδειγμα: VIP ανέβηκε $10 και scale=5 → δανεισμός $50. Υψηλότερο = πιο επιθετική μόχλευση.">?</span> <span class="cat-badge cat-next">NEXT CYCLE</span></label>
           <input name="scale_vip_coin" type="number" step="any">
         </div>
 
         <div class="cfg-row" data-cat="NEXT_CYCLE">
-          <label>min_order_usdt <span class="cat-badge cat-next">NEXT CYCLE</span></label>
+          <label title="Ελάχιστο όριο USDT ανά VIP εντολή. 3 ρόλοι σε ένα.">min_order_usdt <span class="help-q" title="3 ρόλοι: (1) Gate: αν surplus κάτω από αυτό → καμία VIP αγορά. (2) Auto-switch: αν percent split κάτω από αυτό → priority mode. (3) Fail-safe: κάθε order κάτω από αυτό ακυρώνεται. KuCoin min: ~1-10 USDT. Default 5.">?</span> <span class="cat-badge cat-next">NEXT CYCLE</span></label>
           <input name="min_order_usdt" type="number" step="any">
         </div>
 
         <div class="cfg-row cfg-row-full" data-cat="NEXT_CYCLE">
-          <label>vip_percentages (μία γραμμή ανά coin: COIN=PERCENT) <span class="cat-badge cat-next">NEXT CYCLE</span></label>
+          <label title="Ενεργό σε percent mode. Μία γραμμή ανά coin: COIN=PERCENT. Sum=100.">vip_percentages <span class="help-q" title="Παράδειγμα: BTC=40, ETH=40, SOL=20 → 40% BTC, 40% ETH, 20% SOL. Sum πρέπει ακριβώς 100 (validator δείχνει sum αμέσως παρακάτω).">?</span> (μία γραμμή ανά coin: COIN=PERCENT) <span class="cat-badge cat-next">NEXT CYCLE</span></label>
           <textarea name="vip_percentages_text" rows="4" placeholder="BTC=40&#10;ETH=40&#10;SOL=20"></textarea>
           <div class="msg-inline" id="vip-pct-sum"></div>
         </div>
 
         <div class="cfg-row cfg-row-full" data-cat="NEXT_CYCLE">
-          <label>vip_priority_list (μία γραμμή ανά coin, με σειρά προτεραιότητας) <span class="cat-badge cat-next">NEXT CYCLE</span></label>
+          <label title="Ενεργό σε priority mode (ή auto-switch από percent). Ένα coin ανά γραμμή, rotating.">vip_priority_list <span class="help-q" title="Παράδειγμα: BTC / ETH / SOL → κύκλος 1: όλο surplus σε BTC, κύκλος 2: ETH, κύκλος 3: SOL, κύκλος 4: BTC ξανά.">?</span> (μία γραμμή ανά coin, με σειρά προτεραιότητας) <span class="cat-badge cat-next">NEXT CYCLE</span></label>
           <textarea name="vip_priority_list_text" rows="4" placeholder="BTC&#10;ETH&#10;SOL"></textarea>
         </div>
 
