@@ -42,6 +42,12 @@ def create_app() -> Flask:
     # Single-user password (bcrypt/plain - keep simple for now)
     password = os.environ.get("ARBITRADING_WEB_PASSWORD", "changeme")
 
+    # v5.5: Make ARBITRADING_ENV available to all templates (for staging banner)
+    @app.context_processor
+    def inject_env():
+        return {"arbitrading_env": os.environ.get("ARBITRADING_ENV", "production")}
+
+
     def login_required(f):
         @wraps(f)
         def wrapper(*args, **kwargs):

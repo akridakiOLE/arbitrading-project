@@ -2,10 +2,13 @@
 <html lang="el">
 <head>
   <meta charset="UTF-8">
-  <title>Arbitrading Bot - Login</title>
+  <title>{% if arbitrading_env == 'staging' %}[STAGING] {% endif %}Arbitrading Bot - Login</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="login-body">
+  {% if arbitrading_env == 'staging' %}
+  <div class="staging-banner staging-banner-login">&#9888; STAGING &mdash; Δοκιμαστικό περιβάλλον</div>
+  {% endif %}
   <div class="login-box">
     <h1>Arbitrading Bot</h1>
     <form method="POST" action="/login">

@@ -2,10 +2,14 @@
 <html lang="el">
 <head>
   <meta charset="UTF-8">
-  <title>Arbitrading Bot Dashboard</title>
+  <title>{% if arbitrading_env == 'staging' %}[STAGING] {% endif %}Arbitrading Bot Dashboard</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+
+{% if arbitrading_env == 'staging' %}
+<div class="staging-banner">&#9888; STAGING ENVIRONMENT &mdash; Δοκιμαστικό περιβάλλον. ΔΕΝ είναι production.</div>
+{% endif %}
 
 <header>
   <h1>Arbitrading Bot</h1>
