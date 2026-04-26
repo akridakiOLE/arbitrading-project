@@ -492,6 +492,18 @@ async function refreshAll() {
   if (pctArea) pctArea.addEventListener('input', updateVipPercentSum);
 })();
 
+
+// --- Export trades CSV (manual backup, v5.4) ---
+function downloadTradesCSV(mode) {
+  // Δεν χρησιμοποιούμε api() γιατί θέλουμε binary download, όχι JSON.
+  // Browser θα κατεβάσει το CSV ως αρχείο μέσω Content-Disposition header.
+  window.location.href = `/api/trades/export?mode=${encodeURIComponent(mode)}`;
+}
+const _btnExportPaper = document.getElementById('btn-export-paper');
+if (_btnExportPaper) _btnExportPaper.addEventListener('click', () => downloadTradesCSV('paper'));
+const _btnExportLive  = document.getElementById('btn-export-live');
+if (_btnExportLive)  _btnExportLive.addEventListener('click',  () => downloadTradesCSV('live'));
+
 // Init
 loadConfig().then(refreshAll);
 setInterval(refreshAll, REFRESH_MS);

@@ -294,7 +294,12 @@
 
   <!-- Trades -->
   <section class="panel">
-    <h2>Recent Trades (50)</h2>
+    <h2>Recent Trades (50)
+      <span style="float:right; font-size:11px; font-weight:400; text-transform:none;">
+        <button type="button" id="btn-export-paper" class="btn-mini" title="Κατεβάζει ΟΛΑ τα paper trades σε CSV (manual backup)">Export Paper CSV</button>
+        <button type="button" id="btn-export-live"  class="btn-mini" title="Κατεβάζει ΟΛΑ τα live trades σε CSV (manual backup)">Export Live CSV</button>
+      </span>
+    </h2>
     <div class="table-wrap">
       <table id="trades-table">
         <thead>

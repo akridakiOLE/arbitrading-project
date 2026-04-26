@@ -1,0 +1,20 @@
+[Unit]
+Description=Arbitrading Bot - Periodic Cleanup Job
+After=arbitrading.service
+Wants=arbitrading.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/arbitrading-project
+ExecStart=/opt/arbitrading-project/.venv/bin/python /opt/arbitrading-project/tools/cleanup.py
+StandardOutput=append:/var/log/arbitrading/cleanup.log
+StandardError=append:/var/log/arbitrading/cleanup.log
+User=root
+
+# Resource limits — cleanup is lightweight αλλά defensive
+TimeoutStartSec=300
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

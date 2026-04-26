@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly cleanup for Arbitrading Bot
+Documentation=https://github.com/akridakiOLE/arbitrading-project
+
+[Timer]
+# Τρέχει κάθε Κυριακή 04:00 UTC (07:00 Cyprus time)
+# Persistent=true → αν χάθηκε εκτέλεση (server κάτω) θα τρέξει στο επόμενο boot
+OnCalendar=Sun *-*-* 04:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

@@ -125,6 +125,49 @@ def create_app() -> Flask:
         updates = request.get_json() or {}
         return jsonify(get_manager().update_config(updates))
 
+    @app.route("/api/trades/export")
+    @login_required
+    def api_trades_export():
+        """v5.4: Εξαγωγή ΟΛΩΝ των trades σε CSV για manual download/backup."""
+        import csv
+        import io
+        from flask import Response
+        from datetime import datetime as _dt
+
+        mode = request.args.get("mode", "paper")
+        db_name = "live_trades.db" if mode == "live" else "paper_trades.db"
+        table   = "live_trades"    if mode == "live" else "paper_trades"
+
+        if not Path(db_name).exists():
+            return jsonify({"error": f"{db_name} not found"}), 404
+
+        try:
+            conn = sqlite3.connect(db_name)
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"SELECT * FROM {table} ORDER BY id ASC"
+            ).fetchall()
+            conn.close()
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+        output = io.StringIO()
+        if rows:
+            writer = csv.DictWriter(output, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            for r in rows:
+                writer.writerow(dict(r))
+        else:
+            output.write("(no trades)\n")
+
+        ts = _dt.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"{mode}_trades_{ts}.csv"
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     @app.route("/api/symbols")
     @login_required
     def api_symbols():
