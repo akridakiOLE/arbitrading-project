@@ -10,6 +10,7 @@ categories). Symbol/mode change forces fresh start. Otherwise default is
 Resume (unless resume_from_state=False in config).
 """
 
+import os
 import json
 import threading
 import logging
@@ -214,6 +215,8 @@ class BotManager:
                     on_tick=self._on_tick,
                     exchange_id="kucoin",
                     poll_interval=float(cfg_dict.get("poll_interval", 1.0)),
+                    mode=self._mode,  # v6.x: για price injection hard guard (live ignores)
+                    env=os.environ.get("ARBITRADING_ENV", "production"),  # per-env injection file
                 )
 
                 self._started_at = datetime.utcnow()
@@ -623,7 +626,9 @@ class BotManager:
 # Module-level singleton
 _instance: Optional[BotManager] = None
 
+
 def get_manager() -> BotManager:
+    """Return the module-level BotManager singleton (created on first call)."""
     global _instance
     if _instance is None:
         _instance = BotManager()

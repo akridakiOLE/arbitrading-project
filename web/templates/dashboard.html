@@ -89,8 +89,8 @@
         title="Ξεκινά το bot. Αν υπάρχει προηγούμενο state ΚΑΙ το 'Resume from last state' είναι ON ΚΑΙ symbol/mode δεν άλλαξαν → συνεχίζει από εκεί που ήταν. Αλλιώς fresh start.">Start</button>
       <button id="btn-stop"   class="btn btn-red"    disabled
         title="Soft Stop: Σταματά το bot. ΔΕΝ κλείνει θέσεις στο KuCoin — τις χειρίζεσαι χειροκίνητα.">Soft Stop</button>
-      <button id="btn-resset" class="btn btn-orange" disabled
-        title="Promote 3: Ρευστοποιεί BASE_COIN θέσεις. Τα VIP coins ΔΕΝ αγγίζονται.">Resset_Invest (Promote 3)</button>
+      <button id="btn-resset" class="btn btn-red" disabled
+        title="Reset_Invest: Άμεση ρευστοποίηση BASE_COIN θέσεων. Τα VIP coins ΔΕΝ αγγίζονται.">Reset_Invest</button>
       <button id="btn-apply-live" class="btn btn-blue" disabled
         title="Εφαρμόζει τις τρέχουσες ρυθμίσεις live (LIVE + NEXT_CYCLE).">Apply Settings (Live)</button>
     </div>
@@ -174,7 +174,6 @@
         <select name="promote" onchange="togglePromote2Section()">
           <option value="1">1 — Up_Investment</option>
           <option value="2">2 — Buy_Choice_Coins</option>
-          <option value="3">3 — Resset_Invest (manual)</option>
         </select>
       </div>
 
