@@ -101,6 +101,13 @@ class BotMemory:
     buy_trigger_count:       int   = 0
     sell_trigger_count:      int   = 0
 
+    # ── v6.x: cycle-cumulative counters (UI display only) ────────────────────
+    # Δεν μηδενίζονται σε αλλαγή κατεύθυνσης — μηδενίζονται ΜΟΝΟ σε νέο cycle
+    # (SETUP), RESSET_INVEST ή MARGIN_PROTECT. Δεν επηρεάζουν τη λογική
+    # SECOND_PROFIT — αυτή χρησιμοποιεί τα παλιά per-direction counters παραπάνω.
+    buy_count_total:         int   = 0
+    sell_count_total:        int   = 0
+
     # ── v4: Promote 2 state ───────────────────────────────────────────────────
     grand_amount:            float = 0.0         # Αποθηκεύεται σε κάθε SETUP
     last_vip_coin:           float = 0.0         # Cumulative VIP purchase cost
@@ -261,6 +268,9 @@ class ArbitradingV2:
         m.has_bought              = False
         m.buy_trigger_count       = 0
         m.sell_trigger_count      = 0
+        # v6.x: reset cycle-cumulative counters σε νέο cycle
+        m.buy_count_total         = 0
+        m.sell_count_total        = 0
 
         self._reset_buy_tracker()
         self._reset_sell_tracker()
@@ -396,6 +406,8 @@ class ArbitradingV2:
         # v4: Per-direction counter — BUY count +1, SELL count reset
         m.buy_trigger_count  += 1
         m.sell_trigger_count  = 0
+        # v6.x: cumulative cycle counter (UI display, δεν μηδενίζεται)
+        m.buy_count_total    += 1
 
         self._reset_buy_tracker()
         self._reset_sell_tracker()
@@ -426,6 +438,8 @@ class ArbitradingV2:
         # v4: Per-direction counter — SELL count +1, BUY count reset
         m.sell_trigger_count += 1
         m.buy_trigger_count   = 0
+        # v6.x: cumulative cycle counter (UI display, δεν μηδενίζεται)
+        m.sell_count_total   += 1
         # has_bought ΠΑΡΑΜΕΝΕΙ False — ΔΕΝ κλείνει κύκλος
 
         self._reset_buy_tracker()
@@ -734,6 +748,9 @@ class ArbitradingV2:
         m.has_bought         = False
         m.buy_trigger_count  = 0
         m.sell_trigger_count = 0
+        # v6.x: reset cycle-cumulative counters
+        m.buy_count_total    = 0
+        m.sell_count_total   = 0
 
         logger.info(f"  === RESSET_INVEST COMPLETE ===")
         logger.info(f"    USDT cash:        {m.available_usdt:.2f}")
@@ -807,6 +824,9 @@ class ArbitradingV2:
         # v4: Reset per-direction counters
         m.buy_trigger_count  = 0
         m.sell_trigger_count = 0
+        # v6.x: reset cycle-cumulative counters (νέος cycle θα ξεκινήσει σε SETUP)
+        m.buy_count_total    = 0
+        m.sell_count_total   = 0
         self.state = BotState.SETUP
 
     # =========================================================================
@@ -846,6 +866,9 @@ class ArbitradingV2:
             "has_bought":              m.has_bought,
             "buy_trigger_count":       m.buy_trigger_count,
             "sell_trigger_count":      m.sell_trigger_count,
+            # v6.x: cycle-cumulative counters (UI display)
+            "buy_count_total":         m.buy_count_total,
+            "sell_count_total":        m.sell_count_total,
             "buy_activated":           m.buy_activated,
             "sell_activated":          m.sell_activated,
             "buy_trailing_stop":       round(m.buy_trailing_stop, 10),
