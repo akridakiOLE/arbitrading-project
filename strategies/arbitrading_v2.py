@@ -307,7 +307,10 @@ class ArbitradingV2:
         m   = self.memory
         cfg = self.config
         pct = self._get_active_profit_pct('buy')
-        initial_activation = m.reference_price * (1 - pct / 100)
+        # v6.x: round threshold στα 10 δεκαδικά (όσα δείχνει το UI) ώστε όταν
+        # ο χρήστης στέλνει την εμφανιζόμενη τιμή να μην αποτυγχάνει η σύγκριση
+        # λόγω floating-point precision (π.χ. 92.577*0.90 = 83.31929999999999).
+        initial_activation = round(m.reference_price * (1 - pct / 100), 10)
 
         if not m.buy_activated:
             if price <= initial_activation:
@@ -316,7 +319,7 @@ class ArbitradingV2:
                 m.buy_trailing_stop     = price * (1 + cfg.trailing_stop / 100)
                 logger.info(f"  [{m.current_timestamp}] BUY ACTIVATED @ {price:.6f} | threshold: {initial_activation:.6f} | trailing: {m.buy_trailing_stop:.6f}")
         else:
-            next_step = m.buy_lowest_activation * (1 - cfg.step_point / 100)
+            next_step = round(m.buy_lowest_activation * (1 - cfg.step_point / 100), 10)
             if price <= next_step:
                 m.buy_lowest_activation = price
                 m.buy_trailing_stop     = price * (1 + cfg.trailing_stop / 100)
@@ -342,7 +345,10 @@ class ArbitradingV2:
         m   = self.memory
         cfg = self.config
         pct = self._get_active_profit_pct('sell')
-        initial_activation = m.reference_price * (1 + pct / 100)
+        # v6.x: round threshold στα 10 δεκαδικά (όσα δείχνει το UI) ώστε όταν
+        # ο χρήστης στέλνει την εμφανιζόμενη τιμή να μην αποτυγχάνει η σύγκριση
+        # λόγω floating-point precision (π.χ. 92.577*1.10 = 101.83470000000001).
+        initial_activation = round(m.reference_price * (1 + pct / 100), 10)
 
         if not m.sell_activated:
             if price >= initial_activation:
@@ -351,7 +357,7 @@ class ArbitradingV2:
                 m.sell_trailing_stop      = price * (1 - cfg.trailing_stop / 100)
                 logger.info(f"  [{m.current_timestamp}] SELL ACTIVATED @ {price:.6f} | threshold: {initial_activation:.6f} | trailing: {m.sell_trailing_stop:.6f}")
         else:
-            next_step = m.sell_highest_activation * (1 + cfg.step_point / 100)
+            next_step = round(m.sell_highest_activation * (1 + cfg.step_point / 100), 10)
             if price >= next_step:
                 m.sell_highest_activation = price
                 m.sell_trailing_stop      = price * (1 - cfg.trailing_stop / 100)
