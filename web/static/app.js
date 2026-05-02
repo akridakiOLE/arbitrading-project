@@ -205,8 +205,20 @@ function togglePromote2Section() {
   const sel = document.querySelector('[name="promote"]');
   const sec = document.getElementById('vip-config-section');
   if (!sel || !sec) return;
+  const isPromote2 = sel.value === '2';
   // Κρατάμε το display:grid από CSS — χρησιμοποιούμε class toggle για visibility.
-  sec.classList.toggle('hidden', sel.value !== '2');
+  sec.classList.toggle('hidden', !isPromote2);
+  // v6.x: όταν αλλάξει promote ΑΠΟ 2 ΣΕ άλλο, καθάρισε τα VIP textareas
+  // ώστε να μη μένουν παλιές τιμές αν επανέλθεις σε promote=2.
+  if (!isPromote2) {
+    const form  = document.getElementById('cfg-form');
+    if (form) {
+      const pctEl  = form.elements['vip_percentages_text'];
+      const prioEl = form.elements['vip_priority_list_text'];
+      if (pctEl)  pctEl.value  = '';
+      if (prioEl) prioEl.value = '';
+    }
+  }
 }
 
 function parseVipPercentages(text) {

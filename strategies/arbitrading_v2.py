@@ -234,7 +234,19 @@ class ArbitradingV2:
             m.total_base_coin = cfg.start_base_coin + actual_qty
             logger.info(f"  Βήμα 4 | TOTAL = {cfg.start_base_coin} + {actual_qty:.4f} = {m.total_base_coin:.4f}")
         else:
-            # ΕΠΑΝΕΚΚΙΝΗΣΗ: Μόνο SHORT
+            # ΕΠΑΝΕΚΚΙΝΗΣΗ: Δύο sub-cases:
+            #  (a) Promote 1 path: ο closing_sell έχει ήδη μετατρέψει USDT→BASE,
+            #      άρα TOTAL > 0 και CASH = 0. Δεν χρειάζεται να αγοράσουμε BASE.
+            #  (b) Promote 2 path: ο closing_sell πούλησε ΟΛΟ το BASE (Step 2)
+            #      και αγόρασε VIP από surplus. TOTAL = 0 αλλά CASH > 0.
+            #      Πρέπει να αγοράσουμε BASE με ΟΛΟ το CASH ΠΡΙΝ συνεχίσουμε.
+            if m.total_base_coin == 0 and m.available_usdt > 0:
+                buy_qty = m.available_usdt / price
+                actual_qty, actual_price = self.executor.buy_base_coin(buy_qty, price)
+                actual_cost = actual_qty * actual_price
+                m.total_base_coin += actual_qty
+                m.available_usdt  -= actual_cost
+                logger.info(f"  Promote 2 re-entry | BUY {actual_qty:.4f} @ {actual_price:.6f} ({actual_cost:.2f} USDT)")
             logger.info(f"  Επανεκκίνηση | LONG αμετάβλητο | USDT debt: {m.usdt_debt:.2f}")
             logger.info(f"  TOTAL_BASE_COIN = {m.total_base_coin:.4f}")
 
