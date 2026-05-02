@@ -310,8 +310,11 @@ class ArbitradingV2:
         m   = self.memory
         pct = self._get_active_profit_pct('buy')
         m.buy_activated         = False
-        m.buy_lowest_activation = m.reference_price * (1 - pct / 100)
-        m.buy_trailing_stop     = m.buy_lowest_activation * (1 + self.config.trailing_stop / 100)
+        # v6.x: round στα 10 δεκαδικά (matching UI display) για να αποφεύγεται
+        # floating-point precision mismatch όταν ο χρήστης στέλνει την εμφανιζόμενη
+        # τιμή στο price injection.
+        m.buy_lowest_activation = round(m.reference_price * (1 - pct / 100), 10)
+        m.buy_trailing_stop     = round(m.buy_lowest_activation * (1 + self.config.trailing_stop / 100), 10)
 
     def _update_buy_tracker(self, price: float) -> bool:
         m   = self.memory
@@ -326,13 +329,15 @@ class ArbitradingV2:
             if price <= initial_activation:
                 m.buy_activated         = True
                 m.buy_lowest_activation = price
-                m.buy_trailing_stop     = price * (1 + cfg.trailing_stop / 100)
+                # v6.x: round trailing στα 10 δεκαδικά (matching UI display)
+                m.buy_trailing_stop     = round(price * (1 + cfg.trailing_stop / 100), 10)
                 logger.info(f"  [{m.current_timestamp}] BUY ACTIVATED @ {price:.6f} | threshold: {initial_activation:.6f} | trailing: {m.buy_trailing_stop:.6f}")
         else:
             next_step = round(m.buy_lowest_activation * (1 - cfg.step_point / 100), 10)
             if price <= next_step:
                 m.buy_lowest_activation = price
-                m.buy_trailing_stop     = price * (1 + cfg.trailing_stop / 100)
+                # v6.x: round trailing στα 10 δεκαδικά (matching UI display)
+                m.buy_trailing_stop     = round(price * (1 + cfg.trailing_stop / 100), 10)
                 logger.info(f"  [{m.current_timestamp}] BUY STEP_POINT ↓ @ {price:.6f} | trailing: {m.buy_trailing_stop:.6f}")
             elif price >= m.buy_trailing_stop:
                 logger.info(f"  [{m.current_timestamp}] BUY TRIGGER @ {price:.6f} | activation: {m.buy_lowest_activation:.6f} | trailing: {m.buy_trailing_stop:.6f}")
@@ -348,8 +353,11 @@ class ArbitradingV2:
         m   = self.memory
         pct = self._get_active_profit_pct('sell')
         m.sell_activated           = False
-        m.sell_highest_activation  = m.reference_price * (1 + pct / 100)
-        m.sell_trailing_stop       = m.sell_highest_activation * (1 - self.config.trailing_stop / 100)
+        # v6.x: round στα 10 δεκαδικά (matching UI display) για να αποφεύγεται
+        # floating-point precision mismatch όταν ο χρήστης στέλνει την εμφανιζόμενη
+        # τιμή στο price injection.
+        m.sell_highest_activation  = round(m.reference_price * (1 + pct / 100), 10)
+        m.sell_trailing_stop       = round(m.sell_highest_activation * (1 - self.config.trailing_stop / 100), 10)
 
     def _update_sell_tracker(self, price: float) -> bool:
         m   = self.memory
@@ -364,13 +372,15 @@ class ArbitradingV2:
             if price >= initial_activation:
                 m.sell_activated          = True
                 m.sell_highest_activation = price
-                m.sell_trailing_stop      = price * (1 - cfg.trailing_stop / 100)
+                # v6.x: round trailing στα 10 δεκαδικά (matching UI display)
+                m.sell_trailing_stop      = round(price * (1 - cfg.trailing_stop / 100), 10)
                 logger.info(f"  [{m.current_timestamp}] SELL ACTIVATED @ {price:.6f} | threshold: {initial_activation:.6f} | trailing: {m.sell_trailing_stop:.6f}")
         else:
             next_step = round(m.sell_highest_activation * (1 + cfg.step_point / 100), 10)
             if price >= next_step:
                 m.sell_highest_activation = price
-                m.sell_trailing_stop      = price * (1 - cfg.trailing_stop / 100)
+                # v6.x: round trailing στα 10 δεκαδικά (matching UI display)
+                m.sell_trailing_stop      = round(price * (1 - cfg.trailing_stop / 100), 10)
                 logger.info(f"  [{m.current_timestamp}] SELL STEP_POINT ↑ @ {price:.6f} | trailing: {m.sell_trailing_stop:.6f}")
             elif price <= m.sell_trailing_stop:
                 logger.info(f"  [{m.current_timestamp}] SELL TRIGGER @ {price:.6f} | activation: {m.sell_highest_activation:.6f} | trailing: {m.sell_trailing_stop:.6f}")
