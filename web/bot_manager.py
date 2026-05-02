@@ -145,6 +145,22 @@ class BotManager:
             self._last_error = None
             self._pending_config = {}
             try:
+                # v6.x: auto-derive vip_coins αν είναι κενό αλλά υπάρχουν entries σε
+                # vip_percentages ή vip_priority_list. Έτσι αν ο χρήστης συμπληρώσει
+                # μόνο τα ποσοστά (ή priority list) — όπως είναι φυσικό — δεν χάνονται
+                # τα VIP coins λόγω ξεχασμένου πεδίου.
+                vip_coins_input        = list(cfg_dict.get("vip_coins", []))
+                vip_percentages_input  = dict(cfg_dict.get("vip_percentages", {}))
+                vip_priority_input     = list(cfg_dict.get("vip_priority_list", []))
+                vip_allocation_mode    = cfg_dict.get("vip_allocation_mode", "percent")
+                if not vip_coins_input:
+                    if vip_allocation_mode == "percent" and vip_percentages_input:
+                        vip_coins_input = list(vip_percentages_input.keys())
+                        logger.info(f"[BotManager] auto-derived vip_coins from vip_percentages: {vip_coins_input}")
+                    elif vip_allocation_mode == "priority" and vip_priority_input:
+                        vip_coins_input = list(vip_priority_input)
+                        logger.info(f"[BotManager] auto-derived vip_coins from vip_priority_list: {vip_coins_input}")
+
                 bot_config = BotConfig(
                     trading_pair          = cfg_dict["symbol"],
                     start_base_coin       = float(cfg_dict["start_base_coin"]),
@@ -158,10 +174,10 @@ class BotManager:
                     promote               = int(cfg_dict["promote"]),
                     second_profit_enabled = bool(cfg_dict["second_profit_enabled"]),
                     second_profit_percent = float(cfg_dict["second_profit_percent"]),
-                    vip_coins             = list(cfg_dict.get("vip_coins", [])),
-                    vip_allocation_mode   = cfg_dict.get("vip_allocation_mode", "percent"),
-                    vip_percentages       = dict(cfg_dict.get("vip_percentages", {})),
-                    vip_priority_list     = list(cfg_dict.get("vip_priority_list", [])),
+                    vip_coins             = vip_coins_input,
+                    vip_allocation_mode   = vip_allocation_mode,
+                    vip_percentages       = vip_percentages_input,
+                    vip_priority_list     = vip_priority_input,
                     scale_vip_coin        = float(cfg_dict.get("scale_vip_coin", 5.0)),
                     min_order_usdt        = float(cfg_dict.get("min_order_usdt", 5.0)),
                 )
