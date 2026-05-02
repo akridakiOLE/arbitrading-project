@@ -264,15 +264,17 @@ class ArbitradingV2:
         logger.info(f"  Βήμα 6 | Πώληση {sell_qty:.4f} @ {sell_price:.6f} -> {usdt_received:.2f} USDT")
         logger.info(f"  REFERENCE = {m.reference_price:.6f}")
 
-        # v6.x §6 Βήμα 7: Αποθήκευση Grand_amount
-        # Grand_amount = TOTAL_BASE_COIN × REFERENCE (αξία BASE θέσης μετά SETUP).
-        # Χρήσεις:
-        #  - Promote 2: surplus = available_usdt - grand_amount
-        #    Όταν ολοκληρωθεί ο κύκλος και πουληθεί όλο το BASE → η διαφορά
-        #    σε σχέση με τη setup-time αξία είναι το κέρδος για VIP purchase.
-        #  - Promote 1: μόνο για display στο UI (καμία logic dependency).
-        m.grand_amount = m.total_base_coin * price
-        logger.info(f"  Grand_amount = {m.grand_amount:.2f} USDT (= TOTAL_BASE × REFERENCE)")
+        # v6.x §6 Βήμα 7: Αποθήκευση Grand_amount (per-promote semantics).
+        # Promote 1: ενημερώνεται σε ΚΑΘΕ νέο SETUP (= TOTAL_BASE × REFERENCE)
+        #            ώστε το display να δείχνει την τρέχουσα BASE position value.
+        # Promote 2: παραμένει στην αρχική αξία (set μόνο στον πρώτο SETUP).
+        #            Η αρχική αξία είναι το baseline για το surplus calculation
+        #            σε κάθε επόμενο cycle. Έτσι surplus = cycle profit κάθε φορά.
+        if m.grand_amount == 0 or cfg.promote != 2:
+            m.grand_amount = m.total_base_coin * price
+            logger.info(f"  Grand_amount UPDATED = {m.grand_amount:.2f} USDT (= TOTAL_BASE × REFERENCE)")
+        else:
+            logger.info(f"  Grand_amount KEPT = {m.grand_amount:.2f} USDT (Promote 2 — fixed since first SETUP)")
 
         logger.info("  === ΔΟΜΗ ===")
         logger.info(f"  ASSET:  {m.total_base_coin:.4f} ({m.total_base_coin * price:.2f} USDT)")
@@ -607,25 +609,33 @@ class ArbitradingV2:
         surplus = m.available_usdt - m.grand_amount
         logger.info(f"  [Promote2 βήμα 3] available_usdt={m.available_usdt:.2f} | grand={m.grand_amount:.2f} | surplus={surplus:.2f}")
 
+        # v6.x: αποθήκευση last_vip_coin ΠΡΙΝ από το Step 4 buy. Έτσι στο Step 5
+        # μπορούμε να υπολογίσουμε appreciation που περιλαμβάνει το ΝΕΟ VIP που
+        # μόλις αγοράσαμε (γιατί total_vip_market_AFTER_step4 ήδη το περιλαμβάνει).
+        last_vip_coin_pre_step4 = m.last_vip_coin
+
         # Βήμα 4: VIP purchase (αν surplus > min_order)
         if surplus > cfg.min_order_usdt:
             self._buy_vip_coins_from_surplus(surplus)
         else:
             logger.info(f"  [Promote2 βήμα 4] surplus ({surplus:.2f}) ≤ min_order ({cfg.min_order_usdt}) — skip VIP purchase")
 
-        # Βήμα 5: VIP_BORROW calculation
+        # v6.x Βήμα 5: VIP_BORROW με extended formula:
+        #   appreciation_extended = total_vip_market_AFTER_step4 - last_vip_coin_PRE_step4
+        #   Δηλαδή: (παλιά appreciation) + (αξία ΝΕΟΥ VIP από Step 4)
+        # Άρα borrow/repay εφαρμόζεται και στις δύο πλευρές με SCALE_VIP_COIN.
         total_vip_market = self._calc_vip_market_value()
-        appreciation = total_vip_market - m.last_vip_coin
-        logger.info(f"  [Promote2 βήμα 5] VIP market={total_vip_market:.2f} | LAST_VIP={m.last_vip_coin:.2f} | appreciation={appreciation:.2f}")
+        appreciation = total_vip_market - last_vip_coin_pre_step4
+        borrow_or_repay = appreciation * cfg.scale_vip_coin
+        logger.info(f"  [Promote2 βήμα 5] VIP market={total_vip_market:.2f} | LAST_VIP_pre={last_vip_coin_pre_step4:.2f} | appreciation_ext={appreciation:.2f} | scaled={borrow_or_repay:.2f}")
 
-        if appreciation > 0:
-            new_borrow = appreciation * cfg.scale_vip_coin
-            actual_borrowed = self.executor.borrow_usdt_vip(new_borrow)
+        if borrow_or_repay > 0:
+            actual_borrowed = self.executor.borrow_usdt_vip(borrow_or_repay)
             m.vip_borrow_usdt += actual_borrowed
             m.available_usdt  += actual_borrowed
             logger.info(f"  [Promote2 βήμα 5] +BORROW USDT via VIP: {actual_borrowed:.2f} (SCALE={cfg.scale_vip_coin})")
-        elif appreciation < 0:
-            repay_amount = min(abs(appreciation), m.vip_borrow_usdt, m.available_usdt)
+        elif borrow_or_repay < 0:
+            repay_amount = min(abs(borrow_or_repay), m.vip_borrow_usdt, m.available_usdt)
             if repay_amount > 0:
                 self.executor.repay_usdt_vip(repay_amount)
                 m.vip_borrow_usdt -= repay_amount
