@@ -564,3 +564,19 @@ tr:hover td { background: #1a222b; }
   margin-bottom: 20px;
   border-radius: 6px;
 }
+
+/* v6.x: VIP holdings cell — full row span for richer display */
+.vip-holdings-cell {
+  grid-column: 1 / -1;       /* φαρδιά γραμμή για να χωράνε τα enriched details */
+}
+.vip-holdings-cell .metric-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.vip-holdings-cell #b-vip {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #b8e0d2;            /* light green για να ξεχωρίζει */
+}

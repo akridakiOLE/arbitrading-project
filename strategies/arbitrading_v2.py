@@ -114,6 +114,8 @@ class BotMemory:
     priority_rotation_ix:    int   = 0           # Δείκτης rotating priority
     vip_holdings:            Dict[str, float] = field(default_factory=dict)
     vip_borrow_usdt:         float = 0.0         # Αθροιστικός VIP-based δανεισμός USDT
+    # v6.x: per-coin cumulative purchase cost (για display purchase value στο UI)
+    vip_purchase_cost:       Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -721,7 +723,9 @@ class ArbitradingV2:
                 qty, actual_price = self.executor.buy_vip(coin, usdt_amount)
                 m.vip_holdings[coin] = m.vip_holdings.get(coin, 0.0) + qty
                 m.available_usdt    -= usdt_amount
-                m.last_vip_coin     += usdt_amount   # cumulative purchase cost
+                m.last_vip_coin     += usdt_amount   # cumulative purchase cost (όλων των coins)
+                # v6.x: per-coin cumulative cost για display purchase value στο UI
+                m.vip_purchase_cost[coin] = m.vip_purchase_cost.get(coin, 0.0) + usdt_amount
                 logger.info(f"  VIP BUY: {qty:.8f} {coin} @ {actual_price:.2f} = {usdt_amount:.2f} USDT")
             except AttributeError as e:
                 logger.warning(f"  Executor does not support VIP methods: {e}")
@@ -889,6 +893,21 @@ class ArbitradingV2:
         if m.vip_borrow_usdt > 0:
             total_debt += m.vip_borrow_usdt
         ratio = total_assets / total_debt if total_debt > 0 else 0
+
+        # v6.x: enriched VIP holdings — quantity + purchase_cost + current_value
+        vip_enriched: Dict[str, dict] = {}
+        for coin, qty in m.vip_holdings.items():
+            try:
+                cur_price = self.executor.get_vip_price(coin) if hasattr(self.executor, 'get_vip_price') else 0.0
+            except Exception:
+                cur_price = 0.0
+            cur_value = qty * cur_price if cur_price > 0 else 0.0
+            vip_enriched[coin] = {
+                "quantity":      round(qty, 8),
+                "purchase_cost": round(m.vip_purchase_cost.get(coin, 0.0), 2),
+                "current_value": round(cur_value, 2),
+                "current_price": round(cur_price, 4) if cur_price > 0 else None,
+            }
         return {
             "state":                   self.state.value,
             "cycle_count":             m.cycle_count,
@@ -915,6 +934,7 @@ class ArbitradingV2:
             "grand_amount":            round(m.grand_amount, 2),
             "last_vip_coin":           round(m.last_vip_coin, 2),
             "vip_holdings":            dict(m.vip_holdings),
+            "vip_holdings_enriched":   vip_enriched,
             "vip_borrow_usdt":         round(m.vip_borrow_usdt, 2),
             "promote":                 self.config.promote,
             "second_profit_enabled":   self.config.second_profit_enabled,

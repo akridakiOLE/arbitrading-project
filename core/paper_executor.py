@@ -18,6 +18,8 @@ core/paper_executor.py — Paper Trading Executor (v4 Φάση 3α).
 LiveExecutor (μελλοντικό — Φάση 3γ).
 """
 
+import os
+import json
 import sqlite3
 import logging
 import time
@@ -27,6 +29,55 @@ from typing import Tuple, Optional, Dict, Any
 import ccxt
 
 logger = logging.getLogger(__name__)
+
+
+# v6.x: Phase 0 testing — VIP price injection (paper mode only).
+# Διαβάζει το ίδιο /tmp/arbitrading_injection_{env}.json όπου το `vip_prices`
+# field έχει mapping COIN → price (USDT).
+def _injection_file_for(env: str) -> str:
+    return f"/tmp/arbitrading_injection_{env}.json"
+
+
+def _read_vip_injection(env: str, coin: str) -> Optional[float]:
+    """Επιστρέφει injected VIP price για coin αν υπάρχει active injection
+    στο per-env file. Returns None αν:
+      - file δεν υπάρχει ή μη-parseable
+      - mode == 'live' (defensive)
+      - expires_at_iso πέρασε
+      - coin δεν υπάρχει στο vip_prices
+    """
+    inj_path = _injection_file_for(env)
+    try:
+        if not os.path.exists(inj_path):
+            return None
+        with open(inj_path, 'r') as f:
+            data = json.load(f)
+    except Exception:
+        return None
+    # Defensive: live mode → ignore
+    if data.get("mode") == "live":
+        return None
+    # Expiry check (only if set)
+    expires_iso = data.get("expires_at_iso")
+    if expires_iso is not None:
+        try:
+            from datetime import datetime as _dt
+            expires = _dt.fromisoformat(expires_iso)
+            if _dt.now(timezone.utc) >= expires:
+                return None
+        except Exception:
+            return None
+    vip_prices = data.get("vip_prices", {})
+    if not isinstance(vip_prices, dict):
+        return None
+    val = vip_prices.get(coin)
+    try:
+        price = float(val) if val is not None else None
+        if price is not None and price > 0:
+            return price
+    except Exception:
+        pass
+    return None
 
 
 class PaperExecutor:
@@ -60,7 +111,9 @@ class PaperExecutor:
             "BTC": "BTC/USDT", "ETH": "ETH/USDT", "SOL": "SOL/USDT",
         }
         self._vip_price_cache: Dict[str, tuple] = {}  # coin -> (price, ts)
-        self._vip_price_ttl = 5.0   # seconds
+        self._vip_price_ttl = 30.0   # v6.x: 30s cache για να μειώνουμε api load
+        # v6.x: ARBITRADING_ENV (για VIP price injection per-env file)
+        self._env = os.environ.get("ARBITRADING_ENV", "production")
 
         # ccxt για VIP prices
         self._exchange = None
@@ -198,8 +251,18 @@ class PaperExecutor:
         return self._exchange
 
     def get_vip_price(self, coin: str) -> float:
-        """Επιστρέφει τρέχουσα τιμή VIP coin σε USDT από ccxt.
-        Caching 5s για να μην κάνουμε API call για κάθε κλήση."""
+        """Επιστρέφει τρέχουσα τιμή VIP coin σε USDT.
+
+        Παράκαμψη ccxt αν υπάρχει active VIP injection (paper-only feature
+        μέσω tools/inject_price.py --vip).
+
+        Caching 30s για να μειώνουμε api load.
+        """
+        # v6.x: check VIP injection first (paper mode only — live ignores)
+        injected = _read_vip_injection(self._env, coin)
+        if injected is not None:
+            return injected
+
         now = time.time()
         if coin in self._vip_price_cache:
             cached_price, cached_ts = self._vip_price_cache[coin]
@@ -222,6 +285,19 @@ class PaperExecutor:
         except Exception as e:
             logger.warning(f"  [PAPER] get_vip_price({coin}) ccxt error: {e} — using 1.0")
             return 1.0
+
+    def refresh_vip_prices(self) -> Dict[str, float]:
+        """v6.x: Force refresh ΟΛΩΝ των VIP prices (clear cache + fetch).
+        Καλείται από το API endpoint του 'Refresh VIP prices' button στο UI.
+        """
+        self._vip_price_cache.clear()
+        result: Dict[str, float] = {}
+        for coin in list(self.vip_symbols.keys()):
+            try:
+                result[coin] = self.get_vip_price(coin)
+            except Exception as e:
+                logger.warning(f"  [PAPER] refresh_vip_prices({coin}) error: {e}")
+        return result
 
     def buy_vip(self, coin: str, usdt_amount: float) -> Tuple[float, float]:
         if usdt_amount > self.usdt:

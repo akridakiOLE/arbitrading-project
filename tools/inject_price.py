@@ -79,8 +79,31 @@ def read_bot_config() -> dict:
     sys.exit(f"ERROR: {CONFIG_FILENAME} not found in CWD or project root")
 
 
+def parse_vip_pairs(values):
+    """Parse list of "COIN=PRICE" strings into dict."""
+    result = {}
+    for item in values or []:
+        if '=' not in item:
+            sys.exit(f"REFUSED: VIP entry '{item}' must be COIN=PRICE format")
+        coin, price_str = item.split('=', 1)
+        coin = coin.strip().upper()
+        try:
+            price = float(price_str)
+        except ValueError:
+            sys.exit(f"REFUSED: invalid VIP price '{price_str}'")
+        if price <= 0:
+            sys.exit(f"REFUSED: VIP price for {coin} must be > 0 (got {price})")
+        result[coin] = price
+    return result
+
+
 def cmd_inject(args, env: str, inj_path: str):
-    """Write injection file with given price (persistent or timed)."""
+    """Write injection file with given price (persistent or timed).
+
+    Supports BASE coin price (--price) and/or VIP coins (--vip COIN=PRICE).
+    Merges with existing injection file: if --vip is given but --price is not,
+    only VIP prices update; existing BASE price stays.
+    """
     cfg = read_bot_config()
     symbol = cfg.get("symbol", "")
     mode = cfg.get("mode", "paper")
@@ -89,28 +112,56 @@ def cmd_inject(args, env: str, inj_path: str):
     if mode == "live":
         sys.exit("REFUSED: bot is in 'live' mode. Price injection is paper-only.")
 
+    # Must have at least one of --price or --vip
+    if args.price is None and not args.vip:
+        sys.exit("REFUSED: must provide at least one of --price or --vip COIN=PRICE")
+
     # Validation
-    if args.price <= 0:
+    if args.price is not None and args.price <= 0:
         sys.exit(f"REFUSED: price must be > 0 (got {args.price})")
     if args.duration is not None and not (1 <= args.duration <= MAX_DURATION_S):
         sys.exit(f"REFUSED: duration must be 1-{MAX_DURATION_S}s (got {args.duration})")
     if not symbol:
         sys.exit("REFUSED: bot config has no symbol set")
 
+    vip_prices_new = parse_vip_pairs(args.vip)
+
     now = datetime.now(timezone.utc)
+
+    # Load existing injection (αν υπάρχει) για να κάνουμε merge
+    existing = {}
+    if os.path.exists(inj_path):
+        try:
+            existing = json.loads(Path(inj_path).read_text())
+        except Exception:
+            existing = {}
 
     payload = {
         "symbol":     symbol,
         "mode":       mode,
         "env":        env,
-        "price":      float(args.price),
         "set_at_iso": now.isoformat(),
     }
+    # BASE price: νέο αν δόθηκε, αλλιώς κράτα υπάρχον
+    if args.price is not None:
+        payload["price"] = float(args.price)
+    elif "price" in existing:
+        payload["price"] = existing["price"]
+    # VIP prices: merge με υπάρχοντα
+    merged_vip = dict(existing.get("vip_prices", {}))
+    merged_vip.update(vip_prices_new)
+    if merged_vip:
+        payload["vip_prices"] = merged_vip
+    # Duration: νέο αν δόθηκε
     if args.duration is not None:
         expires = now + timedelta(seconds=args.duration)
         payload["expires_at_iso"] = expires.isoformat()
         payload["duration_s"] = int(args.duration)
-    # else: no expires_at_iso -> persistent injection
+    elif "expires_at_iso" in existing:
+        payload["expires_at_iso"] = existing["expires_at_iso"]
+        if "duration_s" in existing:
+            payload["duration_s"] = existing["duration_s"]
+    # else: persistent
 
     try:
         Path(inj_path).write_text(json.dumps(payload, indent=2))
@@ -118,15 +169,17 @@ def cmd_inject(args, env: str, inj_path: str):
         sys.exit(f"ERROR writing {inj_path}: {e}")
 
     print(f"INJECTED for {symbol} ({mode} mode, env={env}):")
-    print(f"  Price:    {args.price}")
-    if args.duration is not None:
-        print(f"  Duration: {args.duration}s (timed)")
-        print(f"  Expires:  {payload['expires_at_iso']}")
+    if "price" in payload:
+        print(f"  BASE Price: {payload['price']}")
+    if payload.get("vip_prices"):
+        print(f"  VIP Prices: {payload['vip_prices']}")
+    if "expires_at_iso" in payload:
+        print(f"  Expires:    {payload['expires_at_iso']}")
     else:
-        print(f"  Duration: PERSISTENT (no expiry - clear with --clear or replace)")
-    print(f"  File:     {inj_path}")
+        print(f"  Duration:   PERSISTENT (no expiry — clear with --clear or replace)")
+    print(f"  File:       {inj_path}")
     print()
-    print("The bot will pick up this price on its next price tick (within ~1s).")
+    print("Bot picks up changes on next tick (~1s for BASE, up to ~30s for VIP cache).")
 
 
 def cmd_status(_args, env: str, inj_path: str):
@@ -193,8 +246,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--price", type=float,
-                        help="Price to inject (must be > 0)")
+    parser.add_argument("--price", type=float, default=None,
+                        help="BASE coin price to inject (must be > 0)")
+    parser.add_argument("--vip", action="append", default=None, metavar="COIN=PRICE",
+                        help="VIP coin price injection (e.g. --vip BTC=50000). "
+                             "Can be specified multiple times for different coins.")
     parser.add_argument("--duration", type=int, default=None,
                         help=f"Optional timed expiry in seconds (1-{MAX_DURATION_S}). "
                              "If omitted, injection is PERSISTENT (no expiry).")
@@ -212,7 +268,7 @@ def main():
         cmd_status(args, env, inj_path)
     elif args.clear:
         cmd_clear(args, env, inj_path)
-    elif args.price is not None:
+    elif args.price is not None or args.vip:
         cmd_inject(args, env, inj_path)
     else:
         parser.print_help()

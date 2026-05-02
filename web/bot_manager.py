@@ -374,6 +374,21 @@ class BotManager:
                 self._last_error = str(e)
                 return {"ok": False, "error": str(e)}
 
+    def refresh_vip_prices(self) -> dict:
+        """v6.x: Force refresh VIP coin prices (clear cache + fetch fresh).
+        Caled from UI 'Refresh VIP prices' button."""
+        with self._lock:
+            if not self._running or not self.executor:
+                return {"ok": False, "error": "Bot not running"}
+            if not hasattr(self.executor, "refresh_vip_prices"):
+                return {"ok": False, "error": "Executor does not support refresh_vip_prices"}
+            try:
+                prices = self.executor.refresh_vip_prices()
+                return {"ok": True, "prices": prices}
+            except Exception as e:
+                self._last_error = str(e)
+                return {"ok": False, "error": str(e)}
+
     # ----- Live config update -----
 
     def update_config(self, updates: dict) -> dict:

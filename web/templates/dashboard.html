@@ -75,7 +75,12 @@
       <div class="metric"><span class="metric-label">USDT cash</span> <span id="b-usdt">-</span></div>
       <div class="metric"><span class="metric-label">USDT debt</span> <span id="b-udebt">-</span></div>
       <div class="metric"><span class="metric-label">VIP debt (USDT)</span><span id="b-vdebt">-</span></div>
-      <div class="metric"><span class="metric-label">VIP holdings</span><span id="b-vip">{}</span></div>
+      <div class="metric vip-holdings-cell">
+        <span class="metric-label">VIP holdings
+          <button type="button" id="btn-refresh-vip" class="btn-mini" title="Force refresh VIP coin prices (clears 30s cache)">Refresh VIP</button>
+        </span>
+        <span id="b-vip">{}</span>
+      </div>
       <div class="metric"><span class="metric-label">Grand_amount</span><span id="b-grand">-</span></div>
       <div class="metric"><span class="metric-label">Total assets</span><span id="b-tassets">-</span></div>
     </div>

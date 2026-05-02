@@ -113,6 +113,12 @@ def create_app() -> Flask:
     def api_resset():
         return jsonify(get_manager().resset_invest())
 
+    @app.route("/api/vip/refresh", methods=["POST"])
+    @login_required
+    def api_vip_refresh():
+        """v6.x: force refresh of VIP coin prices (clears 30s cache)."""
+        return jsonify(get_manager().refresh_vip_prices())
+
     @app.route("/api/config")
     @login_required
     def api_config():
@@ -283,6 +289,20 @@ def create_app() -> Flask:
 
     return app
 
+
+# v6.x: Configure logging EARLY (πριν την δημιουργία της app) ώστε όλα τα
+# logger.info() από strategy/executor/bot_manager να φτάνουν στο stderr και
+# άρα στο journalctl. Πριν, η logging.basicConfig() ήταν ΜΟΝΟ στο __main__ block,
+# άρα όταν το Flask τρέχει μέσω gunicorn (production/staging) τα strategy logs
+# εξαφανίζονταν.
+import sys as _sys
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        stream=_sys.stderr,
+    )
 
 app = create_app()
 

@@ -125,7 +125,26 @@ function renderStatus(s) {
   setText('b-usdt',    fmt(sn.usdt, 2));
   setText('b-udebt',   fmt(sn.usdt_debt, 2));
   setText('b-vdebt',   fmt(sn.vip_debt_usdt, 2));
-  setText('b-vip',     JSON.stringify(sn.vip_holdings || {}));
+  // v6.x: enriched VIP holdings — qty + purchase cost + current value
+  const vipEl = document.getElementById('b-vip');
+  const enriched = (s.strategy && s.strategy.vip_holdings_enriched) || null;
+  if (vipEl) {
+    if (enriched && Object.keys(enriched).length > 0) {
+      const lines = [];
+      for (const [coin, info] of Object.entries(enriched)) {
+        const qty   = (info.quantity      !== undefined) ? Number(info.quantity).toFixed(8) : '-';
+        const cost  = (info.purchase_cost !== undefined) ? Number(info.purchase_cost).toFixed(2) : '-';
+        const val   = (info.current_value !== undefined) ? Number(info.current_value).toFixed(2) : '-';
+        const pnl   = (info.purchase_cost && info.current_value) ? (Number(info.current_value) - Number(info.purchase_cost)).toFixed(2) : '-';
+        lines.push(`${coin}: qty=${qty} | cost=$${cost} | now=$${val} | Δ=${pnl}`);
+      }
+      vipEl.textContent = lines.join('\n');
+      vipEl.style.whiteSpace = 'pre-line';
+    } else {
+      vipEl.textContent = '{}';
+      vipEl.style.whiteSpace = 'normal';
+    }
+  }
   setText('b-grand',   fmt(st.grand_amount, 2));
   setText('b-tassets', fmt(sn.total_assets, 2));
 
@@ -208,15 +227,17 @@ function togglePromote2Section() {
   const isPromote2 = sel.value === '2';
   // Κρατάμε το display:grid από CSS — χρησιμοποιούμε class toggle για visibility.
   sec.classList.toggle('hidden', !isPromote2);
-  // v6.x: όταν αλλάξει promote ΑΠΟ 2 ΣΕ άλλο, καθάρισε τα VIP textareas
+  // v6.x: όταν αλλάξει promote ΑΠΟ 2 ΣΕ άλλο, καθάρισε τα VIP πεδία
   // ώστε να μη μένουν παλιές τιμές αν επανέλθεις σε promote=2.
   if (!isPromote2) {
     const form  = document.getElementById('cfg-form');
     if (form) {
-      const pctEl  = form.elements['vip_percentages_text'];
-      const prioEl = form.elements['vip_priority_list_text'];
-      if (pctEl)  pctEl.value  = '';
-      if (prioEl) prioEl.value = '';
+      const coinsEl = form.elements['vip_coins'];
+      const pctEl   = form.elements['vip_percentages_text'];
+      const prioEl  = form.elements['vip_priority_list_text'];
+      if (coinsEl) coinsEl.value = '';
+      if (pctEl)   pctEl.value   = '';
+      if (prioEl)  prioEl.value  = '';
     }
   }
 }
@@ -516,8 +537,29 @@ function downloadTradesCSV(mode) {
 const _btnExportPaper = document.getElementById('btn-export-paper');
 if (_btnExportPaper) _btnExportPaper.addEventListener('click', () => downloadTradesCSV('paper'));
 const _btnExportLive  = document.getElementById('btn-export-live');
-if (_btnExportLive)  _btnExportLive.addEventListener('click',  () => downloadTradesCSV('live'));
+if (_btnExportLive)  _btnExportLive.addEventListener('click',  () => downloadT
 
-// Init
-loadConfig().then(refreshAll);
-setInterval(refreshAll, REFRESH_MS);
+// v6.x: Refresh VIP prices button handler
+const btnRefreshVip = document.getElementById('btn-refresh-vip');
+if (btnRefreshVip) {
+  btnRefreshVip.addEventListener('click', async () => {
+    btnRefreshVip.disabled = true;
+    const origText = btnRefreshVip.textContent;
+    btnRefreshVip.textContent = 'Refreshing...';
+    try {
+      const r = await api('/api/vip/refresh', {method: 'POST'});
+      if (r.ok) {
+        const summary = Object.entries(r.prices || {}).map(([c, p]) => `${c}=${p}`).join(', ');
+        showMsg(`VIP prices refreshed: ${summary || '(no coins)'}`, 'ok');
+      } else {
+        showMsg(`VIP refresh failed: ${r.error}`, 'error');
+      }
+      await loadStatus();
+    } catch (e) {
+      showMsg(`VIP refresh error: ${e}`, 'error');
+    } finally {
+      btnRefreshVip.disabled = false;
+      btnRefreshVip.textContent = origText;
+    }
+  });
+}
