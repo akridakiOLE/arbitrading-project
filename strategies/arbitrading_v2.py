@@ -252,11 +252,15 @@ class ArbitradingV2:
         logger.info(f"  Βήμα 6 | Πώληση {sell_qty:.4f} @ {sell_price:.6f} -> {usdt_received:.2f} USDT")
         logger.info(f"  REFERENCE = {m.reference_price:.6f}")
 
-        # v4 §6 Βήμα 7: Αποθήκευση Grand_amount
-        # Grand_amount = BORROW_USDT + (START_BASE_COIN × price)  για πρώτη έναρξη
-        # ή = αξία δομής μετά SETUP για επανεκκίνηση (ίσο με value των assets)
-        m.grand_amount = m.usdt_debt + (m.total_base_coin * price)
-        logger.info(f"  Grand_amount = {m.grand_amount:.2f} USDT")
+        # v6.x §6 Βήμα 7: Αποθήκευση Grand_amount
+        # Grand_amount = TOTAL_BASE_COIN × REFERENCE (αξία BASE θέσης μετά SETUP).
+        # Χρήσεις:
+        #  - Promote 2: surplus = available_usdt - grand_amount
+        #    Όταν ολοκληρωθεί ο κύκλος και πουληθεί όλο το BASE → η διαφορά
+        #    σε σχέση με τη setup-time αξία είναι το κέρδος για VIP purchase.
+        #  - Promote 1: μόνο για display στο UI (καμία logic dependency).
+        m.grand_amount = m.total_base_coin * price
+        logger.info(f"  Grand_amount = {m.grand_amount:.2f} USDT (= TOTAL_BASE × REFERENCE)")
 
         logger.info("  === ΔΟΜΗ ===")
         logger.info(f"  ASSET:  {m.total_base_coin:.4f} ({m.total_base_coin * price:.2f} USDT)")
