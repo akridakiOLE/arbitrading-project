@@ -534,10 +534,12 @@ class ArbitradingV2:
                         m.total_base_coin * price, 0.0, "CLOSING_SELL",
                         notes=f"Κύκλος #{m.cycle_count} (Promote 1) | Start={m.total_base_coin:.4f}")
 
-        # Επανεκκίνηση SETUP
-        logger.info(f"  Επανεκκίνηση SETUP @ {price:.6f}")
+        # v6.x: Set state σε SETUP χωρίς inline _execute_setup. Έτσι ο επόμενος
+        # tick θα επιτρέψει στο BotManager να εφαρμόσει NEXT_CYCLE pending config
+        # (π.χ. αλλαγή promote 1→2) πριν τρέξει το νέο SETUP. Αν ήταν inline, το
+        # _execute_setup θα έτρεχε με το παλιό config.
+        logger.info(f"  Νέο SETUP θα εκτελεστεί στον επόμενο tick (pending config εφαρμόζεται πρώτα)")
         self.state = BotState.SETUP
-        self._execute_setup(price, timestamp)
 
     def _execute_closing_sell_buy_choice_coins(self, price: float, timestamp: datetime) -> None:
         """PROMOTE 2 — Buy_Choice_Coins (v4 §11.2).
@@ -638,10 +640,11 @@ class ArbitradingV2:
                         m.available_usdt, 0.0, "CLOSING_SELL",
                         notes=f"Κύκλος #{m.cycle_count} (Promote 2) | surplus={surplus:.2f} | VIP_holdings={dict(m.vip_holdings)}")
 
-        # Βήμα 6: Restart SETUP με όλα τα USDT
-        logger.info(f"  Επανεκκίνηση SETUP @ {price:.6f}")
+        # v6.x: Set state σε SETUP χωρίς inline _execute_setup (δες σχόλιο στο
+        # Promote 1 closing sell). Έτσι το BotManager θα εφαρμόσει NEXT_CYCLE
+        # pending config πριν το νέο SETUP.
+        logger.info(f"  Νέο SETUP θα εκτελεστεί στον επόμενο tick (pending config εφαρμόζεται πρώτα)")
         self.state = BotState.SETUP
-        self._execute_setup(price, timestamp)
 
     def _buy_vip_coins_from_surplus(self, surplus: float) -> None:
         """VIP allocation logic (§11.2.1):
