@@ -537,7 +537,7 @@ function downloadTradesCSV(mode) {
 const _btnExportPaper = document.getElementById('btn-export-paper');
 if (_btnExportPaper) _btnExportPaper.addEventListener('click', () => downloadTradesCSV('paper'));
 const _btnExportLive  = document.getElementById('btn-export-live');
-if (_btnExportLive)  _btnExportLive.addEventListener('click',  () => downloadT
+if (_btnExportLive)  _btnExportLive.addEventListener('click',  () => downloadTradesCSV('live'));
 
 // v6.x: Refresh VIP prices button handler
 const btnRefreshVip = document.getElementById('btn-refresh-vip');
