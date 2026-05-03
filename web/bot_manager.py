@@ -44,15 +44,19 @@ PARAM_CATEGORIES = {
     "second_profit_percent": "LIVE",
 
     # NEXT_CYCLE — εφαρμόζονται στο επόμενο SETUP
-    "promote":               "NEXT_CYCLE",
-    "scale_base_coin":       "NEXT_CYCLE",
-    "ratio_scale":           "NEXT_CYCLE",
-    "vip_coins":             "NEXT_CYCLE",
-    "vip_allocation_mode":   "NEXT_CYCLE",
-    "vip_percentages":       "NEXT_CYCLE",
-    "vip_priority_list":     "NEXT_CYCLE",
-    "scale_vip_coin":        "NEXT_CYCLE",
-    "min_order_usdt":        "NEXT_CYCLE",
+    "promote":                   "NEXT_CYCLE",
+    "scale_base_coin":           "NEXT_CYCLE",
+    "ratio_scale":               "NEXT_CYCLE",
+    "vip_coins":                 "NEXT_CYCLE",
+    "vip_allocation_mode":       "NEXT_CYCLE",
+    "vip_percentages":           "NEXT_CYCLE",
+    "vip_priority_list":         "NEXT_CYCLE",
+    "scale_vip_coin":            "NEXT_CYCLE",
+    "min_order_usdt":            "NEXT_CYCLE",
+    # v6.x: DYNAMIC_REPAY — αλλαγή mid-cycle επικίνδυνη (αλλάζει ολόκληρη
+    # τη ροή SELL/repay), άρα applied στο επόμενο SETUP.
+    "dynamic_repay_enabled":     "NEXT_CYCLE",
+    "dynamic_repay_percentage":  "NEXT_CYCLE",
 
     # RESTART — χρειάζεται Soft Stop + Start
     "symbol":                "RESTART",
@@ -126,6 +130,9 @@ class BotManager:
             "poll_interval":         1.0,
             "mode":                  "paper",
             "resume_from_state":     True,
+            # v6.x: DYNAMIC_REPAY (default OFF)
+            "dynamic_repay_enabled":    False,
+            "dynamic_repay_percentage": 1.0,
         }
 
     # ----- Start / Stop -----
@@ -180,6 +187,9 @@ class BotManager:
                     vip_priority_list     = vip_priority_input,
                     scale_vip_coin        = float(cfg_dict.get("scale_vip_coin", 5.0)),
                     min_order_usdt        = float(cfg_dict.get("min_order_usdt", 5.0)),
+                    # v6.x: DYNAMIC_REPAY
+                    dynamic_repay_enabled    = bool(cfg_dict.get("dynamic_repay_enabled", False)),
+                    dynamic_repay_percentage = float(cfg_dict.get("dynamic_repay_percentage", 1.0)),
                 )
 
                 self._symbol = cfg_dict["symbol"]

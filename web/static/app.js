@@ -117,6 +117,7 @@ function renderStatus(s) {
   // Fallback στα παλιά per-direction counters αν το backend δεν τα στείλει.
   setText('m-buy-cnt',   (st.buy_count_total  !== undefined ? st.buy_count_total  : (st.buy_trigger_count  || 0)));
   setText('m-sell-cnt',  (st.sell_count_total !== undefined ? st.sell_count_total : (st.sell_trigger_count || 0)));
+  setText('m-dr-cnt',    st.dynamic_repay_count || 0);
   setText('m-hb',        st.has_bought === true ? 'true' : (st.has_bought === false ? 'false' : '-'));
   setText('m-apb',       st.active_profit_pct_buy !== undefined ? fmt(st.active_profit_pct_buy, 2) : '-');
 

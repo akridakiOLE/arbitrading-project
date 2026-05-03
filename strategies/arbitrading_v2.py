@@ -66,6 +66,13 @@ class BotConfig:
     scale_vip_coin:          float            = 5.0
     min_order_usdt:          float            = 5.0
 
+    # ── v6.x: DYNAMIC_REPAY_PERCENTAGE (bypasses SELL_TRIGGER on UP moves) ────
+    # Όταν enabled: σε ΚΑΘΕ +X% κίνηση πάνω από το REFERENCE → ΑΜΕΣΟ repay
+    # qty = TOTAL_BASE × actual_move_pct (cumulative). REFERENCE → current price.
+    # SELL_TRIGGER + SECOND_PROFIT(SELL) bypassed. BUY πλευρά αμετάβλητη.
+    dynamic_repay_enabled:    bool  = False
+    dynamic_repay_percentage: float = 1.0   # default 1% step
+
 
 @dataclass
 class BotMemory:
@@ -107,6 +114,8 @@ class BotMemory:
     # SECOND_PROFIT — αυτή χρησιμοποιεί τα παλιά per-direction counters παραπάνω.
     buy_count_total:         int   = 0
     sell_count_total:        int   = 0
+    # v6.x: DYNAMIC_REPAY counter (single, no per-direction split — UP only).
+    dynamic_repay_count:     int   = 0
 
     # ── v4: Promote 2 state ───────────────────────────────────────────────────
     grand_amount:            float = 0.0         # Αποθηκεύεται σε κάθε SETUP
@@ -291,6 +300,8 @@ class ArbitradingV2:
         # v6.x: reset cycle-cumulative counters σε νέο cycle
         m.buy_count_total         = 0
         m.sell_count_total        = 0
+        # v6.x: reset DYNAMIC_REPAY counter σε νέο cycle
+        m.dynamic_repay_count     = 0
 
         self._reset_buy_tracker()
         self._reset_sell_tracker()
@@ -310,6 +321,18 @@ class ArbitradingV2:
     # =========================================================================
 
     def _monitor(self, price: float, timestamp: datetime) -> None:
+        cfg = self.config
+        # v6.x: DYNAMIC_REPAY mode bypasses SELL_TRIGGER for UP moves when enabled.
+        # BUY tracker still runs normally for DOWN moves.
+        if cfg.dynamic_repay_enabled:
+            if self._process_dynamic_repay(price, timestamp):
+                return  # repay happened (and possibly cycle close)
+            buy_triggered = self._update_buy_tracker(price)
+            if buy_triggered:
+                self._execute_buy(price, timestamp)
+            return
+
+        # Existing path (DYNAMIC_REPAY disabled)
         buy_triggered  = self._update_buy_tracker(price)
         sell_triggered = self._update_sell_tracker(price)
 
@@ -321,6 +344,69 @@ class ArbitradingV2:
                 self._execute_repay_sell(price, timestamp)
         elif buy_triggered:
             self._execute_buy(price, timestamp)
+
+    # =========================================================================
+    # DYNAMIC_REPAY (v6.x) — bypasses SELL_TRIGGER for UP moves when enabled.
+    # =========================================================================
+
+    def _process_dynamic_repay(self, price: float, timestamp: datetime) -> bool:
+        """v6.x: DYNAMIC_REPAY logic. Returns True if repay was executed.
+
+        Trigger:    price >= REFERENCE × (1 + DRP%)
+        Quantity:   TOTAL_BASE × (price - REFERENCE) / REFERENCE  (cumulative)
+        Effect:     repay BORROW; REFERENCE ← current price; counter +=1
+        Cycle end:  if BORROW exhausted → trigger CLOSING_SELL flow (which
+                    handles Promote 1/2 specifics + new SETUP).
+        """
+        m = self.memory
+        cfg = self.config
+
+        # Threshold rounded στα 10 δεκαδικά (consistent με τα υπόλοιπα triggers).
+        threshold = round(m.reference_price * (1 + cfg.dynamic_repay_percentage / 100.0), 10)
+        if price < threshold:
+            return False
+
+        # Cumulative: αν price > threshold απλώς (π.χ. price jumped 5% σε ένα tick),
+        # χρησιμοποιούμε actual move % και κάνουμε ΕΝΑ repay ίσο με αυτό.
+        actual_pct = (price - m.reference_price) / m.reference_price if m.reference_price > 0 else 0
+        qty        = m.total_base_coin * actual_pct
+        if qty <= 0:
+            return False
+
+        actual_repay = min(qty, m.borrow_base_coin)
+        if actual_repay <= 0:
+            return False
+
+        # Execute repay (ίδια λογική με _execute_repay_sell — μετακίνηση από
+        # TOTAL προς BORROW χωρίς spot trade leg).
+        self.executor.repay_base_coin(actual_repay)
+        m.total_base_coin  -= actual_repay
+        m.borrow_base_coin -= actual_repay
+
+        m.sel_price          = price
+        m.reference_price    = price        # update REFERENCE (BUY threshold moves up)
+        m.dynamic_repay_count += 1
+
+        # BUY tracker μετακινείται μαζί με REFERENCE
+        self._reset_buy_tracker()
+
+        self._log_trade(timestamp, "DYNAMIC_REPAY", price, actual_repay,
+                        actual_repay * price, m.borrow_base_coin, "MONITORING",
+                        notes=f"pct={actual_pct*100:.4f}% | new REF={price}")
+        logger.info(f"  DYNAMIC_REPAY | qty={actual_repay:.4f} @ {price:.6f} "
+                    f"({actual_pct*100:.4f}%) | TOTAL={m.total_base_coin:.4f} "
+                    f"BORROW={m.borrow_base_coin:.4f} | new REF={price} | "
+                    f"count={m.dynamic_repay_count}")
+
+        # v6.x: αν το BORROW εξαντλήθηκε ΚΑΙ έχει γίνει buy κάποια στιγμή στον κύκλο,
+        # τρέχουμε το κανονικό closing flow (Promote 1 ή 2) που χειρίζεται την
+        # μετάβαση σε νέο SETUP (συμπεριλαμβανομένου τυχόν VIP purchase για Promote 2).
+        if m.borrow_base_coin <= 1e-9 and m.has_bought:
+            logger.info(f"  DYNAMIC_REPAY | BORROW exhausted → trigger CLOSING_SELL")
+            self.state = BotState.CLOSING_SELL
+            self._execute_closing_sell(price, timestamp)
+
+        return True
 
     # =========================================================================
     # BUY TRACKER (v4: χρήση dispatcher profit%)
@@ -800,6 +886,7 @@ class ArbitradingV2:
         # v6.x: reset cycle-cumulative counters
         m.buy_count_total    = 0
         m.sell_count_total   = 0
+        m.dynamic_repay_count = 0
 
         logger.info(f"  === RESSET_INVEST COMPLETE ===")
         logger.info(f"    USDT cash:        {m.available_usdt:.2f}")
@@ -876,6 +963,7 @@ class ArbitradingV2:
         # v6.x: reset cycle-cumulative counters (νέος cycle θα ξεκινήσει σε SETUP)
         m.buy_count_total    = 0
         m.sell_count_total   = 0
+        m.dynamic_repay_count = 0
         self.state = BotState.SETUP
 
     # =========================================================================
@@ -933,6 +1021,8 @@ class ArbitradingV2:
             # v6.x: cycle-cumulative counters (UI display)
             "buy_count_total":         m.buy_count_total,
             "sell_count_total":        m.sell_count_total,
+            "dynamic_repay_count":     m.dynamic_repay_count,
+            "dynamic_repay_enabled":   self.config.dynamic_repay_enabled,
             "buy_activated":           m.buy_activated,
             "sell_activated":          m.sell_activated,
             "buy_trailing_stop":       round(m.buy_trailing_stop, 10),

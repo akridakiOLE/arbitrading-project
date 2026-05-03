@@ -60,6 +60,7 @@
       <div class="metric"><span class="metric-label">Margin Ratio</span><span id="m-ratio">-</span></div>
       <div class="metric"><span class="metric-label">BUY count</span>  <span id="m-buy-cnt">0</span></div>
       <div class="metric"><span class="metric-label">SELL count</span> <span id="m-sell-cnt">0</span></div>
+      <div class="metric"><span class="metric-label">DYN_REPAY count</span><span id="m-dr-cnt">0</span></div>
       <div class="metric"><span class="metric-label">has_bought</span> <span id="m-hb">-</span></div>
       <div class="metric"><span class="metric-label">Active BUY %</span><span id="m-apb">-</span></div>
     </div>
@@ -193,6 +194,19 @@
       <div class="cfg-row" data-cat="LIVE">
         <label>second_profit_percent <span class="cat-badge cat-live">LIVE</span></label>
         <input name="second_profit_percent" type="number" step="any">
+      </div>
+
+      <div class="cfg-row" data-cat="NEXT_CYCLE">
+        <label title="DYNAMIC_REPAY: Όταν ON, σε κάθε +X% κίνηση πάνω από το REFERENCE γίνεται άμεσο repay. Bypasses SELL_TRIGGER + SECOND_PROFIT(SELL).">dynamic_repay_enabled <span class="cat-badge cat-next">NEXT CYCLE</span></label>
+        <select name="dynamic_repay_enabled">
+          <option value="false">OFF (default)</option>
+          <option value="true">ON</option>
+        </select>
+      </div>
+
+      <div class="cfg-row" data-cat="NEXT_CYCLE">
+        <label title="Ποσοστό κίνησης ανά repay step. 1.0 = 1% πάνω από REFERENCE → repay TOTAL_BASE × actual_pct">dynamic_repay_percentage (%) <span class="cat-badge cat-next">NEXT CYCLE</span></label>
+        <input name="dynamic_repay_percentage" type="number" step="any">
       </div>
 
       <div class="cfg-row" data-cat="RESTART">
