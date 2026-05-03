@@ -401,12 +401,15 @@ class ArbitradingV2:
                     f"BORROW={m.borrow_base_coin:.4f} | new REF={price} | "
                     f"count={m.dynamic_repay_count}")
 
-        # v6.x: αν το BORROW εξαντλήθηκε → cycle close.
-        # ΣΗΜΑΝΤΙΚΟ: στο DYNAMIC_REPAY mode δεν απαιτείται has_bought (δεν γίνεται
-        # ποτέ BUY αν η τιμή ανεβαίνει συνεχώς). Το cycle κλείνει όταν εξαντληθεί
-        # το BORROW μέσω επαναλαμβανόμενων repays.
-        if m.borrow_base_coin <= 1e-9:
-            logger.info(f"  DYNAMIC_REPAY | BORROW exhausted → trigger CLOSING_SELL")
+        # v6.x: cycle close logic — αντίστοιχη με την παλιά SELL_TRIGGER.
+        # Πρώτο DYN_REPAY ΜΕΤΑ από BUY (has_bought=True) κλείνει τον κύκλο.
+        # Σενάρια που κλείνουν cycle:
+        #   (1) DYN_REPAY (×N) → BUY (×M) → DYN_REPAY (×1, κλείνει)
+        #   (2) BUY (×M) → DYN_REPAY (×1, κλείνει)
+        # Σενάρια που ΔΕΝ κλείνουν cycle (μόνο up moves, χωρίς BUY):
+        #   DYN_REPAY (×N, χωρίς BUY ποτέ) — απλά repays, κύκλος συνεχίζει
+        if m.has_bought:
+            logger.info(f"  DYNAMIC_REPAY | has_bought=True → trigger CLOSING_SELL")
             self.state = BotState.CLOSING_SELL
             self._execute_closing_sell(price, timestamp)
 
