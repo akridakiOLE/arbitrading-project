@@ -10,6 +10,7 @@ categories). Symbol/mode change forces fresh start. Otherwise default is
 Resume (unless resume_from_state=False in config).
 """
 
+import os
 import json
 import threading
 import logging
@@ -43,15 +44,19 @@ PARAM_CATEGORIES = {
     "second_profit_percent": "LIVE",
 
     # NEXT_CYCLE — εφαρμόζονται στο επόμενο SETUP
-    "promote":               "NEXT_CYCLE",
-    "scale_base_coin":       "NEXT_CYCLE",
-    "ratio_scale":           "NEXT_CYCLE",
-    "vip_coins":             "NEXT_CYCLE",
-    "vip_allocation_mode":   "NEXT_CYCLE",
-    "vip_percentages":       "NEXT_CYCLE",
-    "vip_priority_list":     "NEXT_CYCLE",
-    "scale_vip_coin":        "NEXT_CYCLE",
-    "min_order_usdt":        "NEXT_CYCLE",
+    "promote":                   "NEXT_CYCLE",
+    "scale_base_coin":           "NEXT_CYCLE",
+    "ratio_scale":               "NEXT_CYCLE",
+    "vip_coins":                 "NEXT_CYCLE",
+    "vip_allocation_mode":       "NEXT_CYCLE",
+    "vip_percentages":           "NEXT_CYCLE",
+    "vip_priority_list":         "NEXT_CYCLE",
+    "scale_vip_coin":            "NEXT_CYCLE",
+    "min_order_usdt":            "NEXT_CYCLE",
+    # v6.x: DYNAMIC_REPAY — αλλαγή mid-cycle επικίνδυνη (αλλάζει ολόκληρη
+    # τη ροή SELL/repay), άρα applied στο επόμενο SETUP.
+    "dynamic_repay_enabled":     "NEXT_CYCLE",
+    "dynamic_repay_percentage":  "NEXT_CYCLE",
 
     # RESTART — χρειάζεται Soft Stop + Start
     "symbol":                "RESTART",
@@ -125,6 +130,9 @@ class BotManager:
             "poll_interval":         1.0,
             "mode":                  "paper",
             "resume_from_state":     True,
+            # v6.x: DYNAMIC_REPAY (default OFF)
+            "dynamic_repay_enabled":    False,
+            "dynamic_repay_percentage": 1.0,
         }
 
     # ----- Start / Stop -----
@@ -144,6 +152,22 @@ class BotManager:
             self._last_error = None
             self._pending_config = {}
             try:
+                # v6.x: auto-derive vip_coins αν είναι κενό αλλά υπάρχουν entries σε
+                # vip_percentages ή vip_priority_list. Έτσι αν ο χρήστης συμπληρώσει
+                # μόνο τα ποσοστά (ή priority list) — όπως είναι φυσικό — δεν χάνονται
+                # τα VIP coins λόγω ξεχασμένου πεδίου.
+                vip_coins_input        = list(cfg_dict.get("vip_coins", []))
+                vip_percentages_input  = dict(cfg_dict.get("vip_percentages", {}))
+                vip_priority_input     = list(cfg_dict.get("vip_priority_list", []))
+                vip_allocation_mode    = cfg_dict.get("vip_allocation_mode", "percent")
+                if not vip_coins_input:
+                    if vip_allocation_mode == "percent" and vip_percentages_input:
+                        vip_coins_input = list(vip_percentages_input.keys())
+                        logger.info(f"[BotManager] auto-derived vip_coins from vip_percentages: {vip_coins_input}")
+                    elif vip_allocation_mode == "priority" and vip_priority_input:
+                        vip_coins_input = list(vip_priority_input)
+                        logger.info(f"[BotManager] auto-derived vip_coins from vip_priority_list: {vip_coins_input}")
+
                 bot_config = BotConfig(
                     trading_pair          = cfg_dict["symbol"],
                     start_base_coin       = float(cfg_dict["start_base_coin"]),
@@ -157,12 +181,15 @@ class BotManager:
                     promote               = int(cfg_dict["promote"]),
                     second_profit_enabled = bool(cfg_dict["second_profit_enabled"]),
                     second_profit_percent = float(cfg_dict["second_profit_percent"]),
-                    vip_coins             = list(cfg_dict.get("vip_coins", [])),
-                    vip_allocation_mode   = cfg_dict.get("vip_allocation_mode", "percent"),
-                    vip_percentages       = dict(cfg_dict.get("vip_percentages", {})),
-                    vip_priority_list     = list(cfg_dict.get("vip_priority_list", [])),
+                    vip_coins             = vip_coins_input,
+                    vip_allocation_mode   = vip_allocation_mode,
+                    vip_percentages       = vip_percentages_input,
+                    vip_priority_list     = vip_priority_input,
                     scale_vip_coin        = float(cfg_dict.get("scale_vip_coin", 5.0)),
                     min_order_usdt        = float(cfg_dict.get("min_order_usdt", 5.0)),
+                    # v6.x: DYNAMIC_REPAY
+                    dynamic_repay_enabled    = bool(cfg_dict.get("dynamic_repay_enabled", False)),
+                    dynamic_repay_percentage = float(cfg_dict.get("dynamic_repay_percentage", 1.0)),
                 )
 
                 self._symbol = cfg_dict["symbol"]
@@ -190,11 +217,15 @@ class BotManager:
                         db_path="live_trades.db",
                     )
                 else:
+                    # v6.x: pass symbol + base_ccy ώστε τα BASE coin trades να
+                    # καταγράφονται στο audit DB με σωστό SYMBOL column.
                     self.executor = PaperExecutor(
                         start_base_coin=bot_config.start_base_coin,
                         db_path="paper_trades.db",
                         exchange_id="kucoin",
                         slippage_pct=0.0,
+                        symbol=self._symbol,
+                        base_ccy=self._symbol.split('/')[0] if '/' in self._symbol else self._symbol,
                     )
 
                 self.state_persistence = StatePersistence(
@@ -214,6 +245,8 @@ class BotManager:
                     on_tick=self._on_tick,
                     exchange_id="kucoin",
                     poll_interval=float(cfg_dict.get("poll_interval", 1.0)),
+                    mode=self._mode,  # v6.x: για price injection hard guard (live ignores)
+                    env=os.environ.get("ARBITRADING_ENV", "production"),  # per-env injection file
                 )
 
                 self._started_at = datetime.utcnow()
@@ -351,6 +384,21 @@ class BotManager:
                 self.strategy.execute_resset_invest(price, datetime.utcnow())
                 self._save_snapshot("RESSET_INVEST")
                 return {"ok": True, "price": price}
+            except Exception as e:
+                self._last_error = str(e)
+                return {"ok": False, "error": str(e)}
+
+    def refresh_vip_prices(self) -> dict:
+        """v6.x: Force refresh VIP coin prices (clear cache + fetch fresh).
+        Caled from UI 'Refresh VIP prices' button."""
+        with self._lock:
+            if not self._running or not self.executor:
+                return {"ok": False, "error": "Bot not running"}
+            if not hasattr(self.executor, "refresh_vip_prices"):
+                return {"ok": False, "error": "Executor does not support refresh_vip_prices"}
+            try:
+                prices = self.executor.refresh_vip_prices()
+                return {"ok": True, "prices": prices}
             except Exception as e:
                 self._last_error = str(e)
                 return {"ok": False, "error": str(e)}
@@ -623,7 +671,9 @@ class BotManager:
 # Module-level singleton
 _instance: Optional[BotManager] = None
 
+
 def get_manager() -> BotManager:
+    """Return the module-level BotManager singleton (created on first call)."""
     global _instance
     if _instance is None:
         _instance = BotManager()

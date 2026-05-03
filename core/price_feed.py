@@ -12,6 +12,8 @@ MVP design (v4 Φάση 3α):
 είναι trivial αργότερα μέσω ccxt.pro ή raw websockets library.
 """
 
+import os
+import json
 import time
 import threading
 import logging
@@ -19,6 +21,13 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 
 import ccxt
+
+# v6.x: Phase 0 testing — price injection (single-symbol bot).
+# Multi-symbol Phase 2+ will use per-slot files.
+# Per-environment isolation: production and staging share /tmp on same host
+# but use different files to avoid cross-contamination.
+def _injection_file_for(env: str) -> str:
+    return f"/tmp/arbitrading_injection_{env}.json"
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +40,18 @@ class PriceFeed:
                  on_tick:       Callable[[float, datetime], None],
                  exchange_id:   str   = "kucoin",
                  poll_interval: float = 1.0,
-                 max_backoff:   float = 60.0):
+                 max_backoff:   float = 60.0,
+                 mode:          str   = "paper",
+                 env:           str   = "production"):
         self.symbol        = symbol
         self.on_tick       = on_tick
         self.exchange_id   = exchange_id
         self.poll_interval = poll_interval
         self.max_backoff   = max_backoff
+        # v6.x: bot mode (paper|live). Live mode IGNORES injections (hard guard).
+        self.mode          = mode
+        # v6.x: ARBITRADING_ENV (production|staging). Used για per-env injection file.
+        self.env           = env
 
         self._exchange = self._init_exchange()
         self._stop     = threading.Event()
@@ -112,12 +127,76 @@ class PriceFeed:
             self._stop.wait(self.poll_interval)
 
     def _fetch_price(self):
-        """Fetch latest ticker και επιστρέφει (price, timestamp)."""
+        """Fetch latest ticker και επιστρέφει (price, timestamp).
+
+        v6.x: σε paper mode ελέγχει πρώτα αν υπάρχει active price injection
+        (από tools/inject_price.py). Σε live mode το injection αγνοείται
+        πάντα (hard guard).
+        """
+        # Phase 0 testing: check for active price injection (paper mode only).
+        if self.mode != "live":
+            injection = self._read_injection()
+            if injection is not None:
+                return injection
+        # Normal path: real exchange ticker.
         ticker = self._exchange.fetch_ticker(self.symbol)
         price  = ticker.get('last') or ticker.get('close')
         ts_ms  = ticker.get('timestamp') or int(time.time() * 1000)
         ts     = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
         return (price, ts)
+
+    def _read_injection(self):
+        """Returns (injected_price, ts) if active injection for self.symbol, else None.
+
+        Reads /tmp/arbitrading_injection_{env}.json. Per-env file isolates
+        production from staging. The injection is honored only if:
+          - File exists and parseable
+          - injection.symbol matches self.symbol
+          - injection.mode is not 'live' (defensive double-check)
+          - If 'expires_at_iso' present → now < expires_at_iso
+          - If 'expires_at_iso' missing → PERSISTENT, no expiry check
+
+        Expired files are auto-cleaned. Any error returns None (fall-through to
+        real exchange API).
+        """
+        inj_path = _injection_file_for(self.env)
+        try:
+            if not os.path.exists(inj_path):
+                return None
+            with open(inj_path, 'r') as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.warning(f"[PriceFeed] Failed to read injection file: {e}")
+            return None
+
+        # Symbol mismatch → ignore (different bot's injection, e.g. multi-symbol future)
+        if data.get("symbol") != self.symbol:
+            return None
+        # Defensive: never honor live-mode injection even if file says so
+        if data.get("mode") == "live":
+            logger.warning(f"[PriceFeed] Injection has mode=live, ignoring (paper-only feature)")
+            return None
+        # Expiry check (only if expires_at_iso is set; otherwise persistent)
+        expires_iso = data.get("expires_at_iso")
+        if expires_iso is not None:
+            try:
+                expires = datetime.fromisoformat(expires_iso)
+                now = datetime.now(timezone.utc)
+                if now >= expires:
+                    # Auto-cleanup expired file
+                    try: os.remove(inj_path)
+                    except Exception: pass
+                    return None
+            except Exception:
+                return None
+        # Valid → return injected price with current timestamp
+        try:
+            price = float(data["price"])
+            if price <= 0:
+                return None
+        except Exception:
+            return None
+        return (price, datetime.now(timezone.utc))
 
     def get_last_price(self) -> Optional[float]:
         """Επιστρέφει την τελευταία παρατηρηθείσα τιμή (για executor)."""

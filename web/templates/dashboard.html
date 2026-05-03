@@ -38,7 +38,10 @@
         <div class="trigger-bar"><div class="trigger-bar-fill buy" id="t-buy-bar" style="width:0%"></div></div>
       </div>
       <div class="trigger-box" id="trigger-sell">
-        <div class="trigger-label">SELL trigger</div>
+        <div class="trigger-label">
+          <span id="t-sell-label-sell">SELL trigger</span>
+          <span id="t-sell-label-dyn" style="display:none;">DYNAMIC REPAY</span>
+        </div>
         <div class="trigger-value" id="t-sell-val">-</div>
         <div class="trigger-distance"><span id="t-sell-dist">-</span>% μακριά</div>
         <div class="trigger-bar"><div class="trigger-bar-fill sell" id="t-sell-bar" style="width:0%"></div></div>
@@ -60,6 +63,7 @@
       <div class="metric"><span class="metric-label">Margin Ratio</span><span id="m-ratio">-</span></div>
       <div class="metric"><span class="metric-label">BUY count</span>  <span id="m-buy-cnt">0</span></div>
       <div class="metric"><span class="metric-label">SELL count</span> <span id="m-sell-cnt">0</span></div>
+      <div class="metric"><span class="metric-label">DYN_REPAY count</span><span id="m-dr-cnt">0</span></div>
       <div class="metric"><span class="metric-label">has_bought</span> <span id="m-hb">-</span></div>
       <div class="metric"><span class="metric-label">Active BUY %</span><span id="m-apb">-</span></div>
     </div>
@@ -75,7 +79,12 @@
       <div class="metric"><span class="metric-label">USDT cash</span> <span id="b-usdt">-</span></div>
       <div class="metric"><span class="metric-label">USDT debt</span> <span id="b-udebt">-</span></div>
       <div class="metric"><span class="metric-label">VIP debt (USDT)</span><span id="b-vdebt">-</span></div>
-      <div class="metric"><span class="metric-label">VIP holdings</span><span id="b-vip">{}</span></div>
+      <div class="metric vip-holdings-cell">
+        <span class="metric-label">VIP holdings
+          <button type="button" id="btn-refresh-vip" class="btn-mini" title="Force refresh VIP coin prices (clears 30s cache)">Refresh VIP</button>
+        </span>
+        <span id="b-vip">{}</span>
+      </div>
       <div class="metric"><span class="metric-label">Grand_amount</span><span id="b-grand">-</span></div>
       <div class="metric"><span class="metric-label">Total assets</span><span id="b-tassets">-</span></div>
     </div>
@@ -89,8 +98,8 @@
         title="Ξεκινά το bot. Αν υπάρχει προηγούμενο state ΚΑΙ το 'Resume from last state' είναι ON ΚΑΙ symbol/mode δεν άλλαξαν → συνεχίζει από εκεί που ήταν. Αλλιώς fresh start.">Start</button>
       <button id="btn-stop"   class="btn btn-red"    disabled
         title="Soft Stop: Σταματά το bot. ΔΕΝ κλείνει θέσεις στο KuCoin — τις χειρίζεσαι χειροκίνητα.">Soft Stop</button>
-      <button id="btn-resset" class="btn btn-orange" disabled
-        title="Promote 3: Ρευστοποιεί BASE_COIN θέσεις. Τα VIP coins ΔΕΝ αγγίζονται.">Resset_Invest (Promote 3)</button>
+      <button id="btn-resset" class="btn btn-red" disabled
+        title="Reset_Invest: Άμεση ρευστοποίηση BASE_COIN θέσεων. Τα VIP coins ΔΕΝ αγγίζονται.">Reset_Invest</button>
       <button id="btn-apply-live" class="btn btn-blue" disabled
         title="Εφαρμόζει τις τρέχουσες ρυθμίσεις live (LIVE + NEXT_CYCLE).">Apply Settings (Live)</button>
     </div>
@@ -174,7 +183,6 @@
         <select name="promote" onchange="togglePromote2Section()">
           <option value="1">1 — Up_Investment</option>
           <option value="2">2 — Buy_Choice_Coins</option>
-          <option value="3">3 — Resset_Invest (manual)</option>
         </select>
       </div>
 
@@ -189,6 +197,19 @@
       <div class="cfg-row" data-cat="LIVE">
         <label>second_profit_percent <span class="cat-badge cat-live">LIVE</span></label>
         <input name="second_profit_percent" type="number" step="any">
+      </div>
+
+      <div class="cfg-row" data-cat="NEXT_CYCLE">
+        <label title="DYNAMIC_REPAY: Όταν ON, σε κάθε +X% κίνηση πάνω από το REFERENCE γίνεται άμεσο repay. Bypasses SELL_TRIGGER + SECOND_PROFIT(SELL).">dynamic_repay_enabled <span class="cat-badge cat-next">NEXT CYCLE</span></label>
+        <select name="dynamic_repay_enabled">
+          <option value="false">OFF (default)</option>
+          <option value="true">ON</option>
+        </select>
+      </div>
+
+      <div class="cfg-row" data-cat="NEXT_CYCLE">
+        <label title="Ποσοστό κίνησης ανά repay step. 1.0 = 1% πάνω από REFERENCE → repay TOTAL_BASE × actual_pct">dynamic_repay_percentage (%) <span class="cat-badge cat-next">NEXT CYCLE</span></label>
+        <input name="dynamic_repay_percentage" type="number" step="any">
       </div>
 
       <div class="cfg-row" data-cat="RESTART">
@@ -298,13 +319,19 @@
 
   <!-- Trades -->
   <section class="panel">
-    <h2>Recent Trades (50)
+    <h2>Recent Trades (200)
       <span style="float:right; font-size:11px; font-weight:400; text-transform:none;">
-        <button type="button" id="btn-export-paper" class="btn-mini" title="Κατεβάζει ΟΛΑ τα paper trades σε CSV (manual backup)">Export Paper CSV</button>
-        <button type="button" id="btn-export-live"  class="btn-mini" title="Κατεβάζει ΟΛΑ τα live trades σε CSV (manual backup)">Export Live CSV</button>
+        <label style="margin-right:4px; color:#9aa4b1;">From:</label>
+        <input type="date" id="trades-filter-from" title="Από ημερομηνία (συμπεριλαμβάνεται)" style="padding:3px 6px; background:#0f1419; border:1px solid #1f2933; color:#e6e6e6; border-radius:3px; font-size:11px; color-scheme:dark;">
+        <label style="margin:0 4px 0 8px; color:#9aa4b1;">To:</label>
+        <input type="date" id="trades-filter-to" title="Μέχρι ημερομηνία (συμπεριλαμβάνεται)" style="padding:3px 6px; background:#0f1419; border:1px solid #1f2933; color:#e6e6e6; border-radius:3px; font-size:11px; color-scheme:dark;">
+        <input type="text" id="trades-filter" placeholder="Text filter…" style="margin:0 8px 0 8px; padding:3px 6px; background:#0f1419; border:1px solid #1f2933; color:#e6e6e6; border-radius:3px; font-size:11px;">
+        <button type="button" id="btn-filter-clear" class="btn-mini" title="Καθάρισμα φίλτρων">Clear</button>
+        <button type="button" id="btn-export-paper" class="btn-mini" title="Κατεβάζει paper trades σε CSV — αν είναι επιλεγμένες ημερομηνίες, μόνο αυτό το range">Export Paper CSV</button>
+        <button type="button" id="btn-export-live"  class="btn-mini" title="Κατεβάζει live trades σε CSV — αν είναι επιλεγμένες ημερομηνίες, μόνο αυτό το range">Export Live CSV</button>
       </span>
     </h2>
-    <div class="table-wrap">
+    <div class="table-wrap trades-table-wrap">
       <table id="trades-table">
         <thead>
           <tr>

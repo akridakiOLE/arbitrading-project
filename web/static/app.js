@@ -54,6 +54,30 @@ function renderTriggerBoxes(s) {
   let buyTarget  = (st.buy_activated  ? st.buy_trailing_stop  : (ref && pctBuy  !== null ? ref * (1 - pctBuy  / 100) : null));
   let sellTarget = (st.sell_activated ? st.sell_trailing_stop : (ref && pctSell !== null ? ref * (1 + pctSell / 100) : null));
 
+  // v6.x: αν DYNAMIC_REPAY=ON, η SELL trigger γραμμή αντικαθίσταται από
+  // DYNAMIC_REPAY threshold. SELL_TRIGGER bypassed.
+  // Asymmetric threshold:
+  //   has_bought=False → REF × (1 + DRP%)        (1% by default)
+  //   has_bought=True  → REF × (1 + MIN_PROFIT%) (10% by default — closing cycle)
+  const dynEnabled = !!st.dynamic_repay_enabled;
+  const dynPct     = (typeof st.dynamic_repay_percentage === 'number') ? st.dynamic_repay_percentage : null;
+  const hasBought  = !!st.has_bought;
+  // Όταν DYN_REPAY=ON και has_bought=True, χρησιμοποιούμε το active_profit_pct_sell
+  // (το οποίο, όταν DYN_REPAY=ON, είναι πάντα min_profit_percent γιατί SELL_TRIGGER
+  // bypassed → sell_trigger_count=0 → min_profit_percent επιστρέφεται).
+  if (dynEnabled && ref !== null && dynPct !== null) {
+    const closingPct = (hasBought && typeof st.active_profit_pct_sell === 'number')
+                       ? st.active_profit_pct_sell : dynPct;
+    sellTarget = ref * (1 + closingPct / 100);
+  }
+  // Toggle labels για να ξεχωρίζει τι είναι active
+  const lblSell = document.getElementById('t-sell-label-sell');
+  const lblDyn  = document.getElementById('t-sell-label-dyn');
+  if (lblSell && lblDyn) {
+    lblSell.style.display = dynEnabled ? 'none' : '';
+    lblDyn.style.display  = dynEnabled ? '' : 'none';
+  }
+
   setText('t-buy-val',  buyTarget  !== null && buyTarget  !== undefined ? fmt(buyTarget,  10) : '-');
   setText('t-sell-val', sellTarget !== null && sellTarget !== undefined ? fmt(sellTarget, 10) : '-');
 
@@ -113,8 +137,11 @@ function renderStatus(s) {
   setText('m-price-big', lastPrice !== null ? fmt(lastPrice, 10) : '-');
   setText('m-ref',       fmt(st.reference_price, 10));
   setText('m-ratio',     fmt(sn.margin_ratio, 4));
-  setText('m-buy-cnt',   st.buy_trigger_count || 0);
-  setText('m-sell-cnt',  st.sell_trigger_count || 0);
+  // v6.x: cycle-cumulative counters (δεν μηδενίζονται σε αλλαγή κατεύθυνσης).
+  // Fallback στα παλιά per-direction counters αν το backend δεν τα στείλει.
+  setText('m-buy-cnt',   (st.buy_count_total  !== undefined ? st.buy_count_total  : (st.buy_trigger_count  || 0)));
+  setText('m-sell-cnt',  (st.sell_count_total !== undefined ? st.sell_count_total : (st.sell_trigger_count || 0)));
+  setText('m-dr-cnt',    st.dynamic_repay_count || 0);
   setText('m-hb',        st.has_bought === true ? 'true' : (st.has_bought === false ? 'false' : '-'));
   setText('m-apb',       st.active_profit_pct_buy !== undefined ? fmt(st.active_profit_pct_buy, 2) : '-');
 
@@ -123,7 +150,32 @@ function renderStatus(s) {
   setText('b-usdt',    fmt(sn.usdt, 2));
   setText('b-udebt',   fmt(sn.usdt_debt, 2));
   setText('b-vdebt',   fmt(sn.vip_debt_usdt, 2));
-  setText('b-vip',     JSON.stringify(sn.vip_holdings || {}));
+  // v6.x: enriched VIP holdings — qty + purchase cost + current value + TOTAL row
+  const vipEl = document.getElementById('b-vip');
+  const enriched = (s.strategy && s.strategy.vip_holdings_enriched) || null;
+  if (vipEl) {
+    if (enriched && Object.keys(enriched).length > 0) {
+      const lines = [];
+      let totalCost = 0, totalValue = 0;
+      for (const [coin, info] of Object.entries(enriched)) {
+        const qtyN  = Number(info.quantity      || 0);
+        const costN = Number(info.purchase_cost || 0);
+        const valN  = Number(info.current_value || 0);
+        const pnlN  = valN - costN;
+        totalCost  += costN;
+        totalValue += valN;
+        lines.push(`${coin}: qty=${qtyN.toFixed(8)} | cost=$${costN.toFixed(2)} | now=$${valN.toFixed(2)} | Δ=${pnlN.toFixed(2)}`);
+      }
+      const totalPnl = totalValue - totalCost;
+      lines.push(`──────────────────────────────────────────────────────`);
+      lines.push(`TOTAL:           cost=$${totalCost.toFixed(2)} | now=$${totalValue.toFixed(2)} | Δ=${totalPnl.toFixed(2)}`);
+      vipEl.textContent = lines.join('\n');
+      vipEl.style.whiteSpace = 'pre-line';
+    } else {
+      vipEl.textContent = '{}';
+      vipEl.style.whiteSpace = 'normal';
+    }
+  }
   setText('b-grand',   fmt(st.grand_amount, 2));
   setText('b-tassets', fmt(sn.total_assets, 2));
 
@@ -203,8 +255,22 @@ function togglePromote2Section() {
   const sel = document.querySelector('[name="promote"]');
   const sec = document.getElementById('vip-config-section');
   if (!sel || !sec) return;
+  const isPromote2 = sel.value === '2';
   // Κρατάμε το display:grid από CSS — χρησιμοποιούμε class toggle για visibility.
-  sec.classList.toggle('hidden', sel.value !== '2');
+  sec.classList.toggle('hidden', !isPromote2);
+  // v6.x: όταν αλλάξει promote ΑΠΟ 2 ΣΕ άλλο, καθάρισε τα VIP πεδία
+  // ώστε να μη μένουν παλιές τιμές αν επανέλθεις σε promote=2.
+  if (!isPromote2) {
+    const form  = document.getElementById('cfg-form');
+    if (form) {
+      const coinsEl = form.elements['vip_coins'];
+      const pctEl   = form.elements['vip_percentages_text'];
+      const prioEl  = form.elements['vip_priority_list_text'];
+      if (coinsEl) coinsEl.value = '';
+      if (pctEl)   pctEl.value   = '';
+      if (prioEl)  prioEl.value  = '';
+    }
+  }
 }
 
 function parseVipPercentages(text) {
@@ -419,26 +485,76 @@ document.getElementById('btn-atr').addEventListener('click', async () => {
 // -----------------------------------------------------------------
 // Tables
 // -----------------------------------------------------------------
+// v6.x: cache τα tρέχοντα trades για in-memory filter
+let _tradesCache = [];
+
+function renderTradesTable() {
+  const tbody = document.querySelector('#trades-table tbody');
+  if (!tbody) return;
+  const filterEl = document.getElementById('trades-filter');
+  const fromEl   = document.getElementById('trades-filter-from');
+  const toEl     = document.getElementById('trades-filter-to');
+  const q        = (filterEl ? filterEl.value : '').trim().toLowerCase();
+  const fromDate = fromEl ? fromEl.value : '';   // "YYYY-MM-DD" από native date input
+  const toDate   = toEl   ? toEl.value   : '';
+
+  const filtered = _tradesCache.filter(t => {
+    const tsDate = (t.ts_iso || '').slice(0, 10);  // ISO start = "YYYY-MM-DD"
+    if (fromDate && tsDate < fromDate) return false;
+    if (toDate   && tsDate > toDate)   return false;
+    if (q) {
+      const blob = `${t.ts_iso || ''} ${t.action || ''} ${t.symbol || ''} ${t.note || ''}`.toLowerCase();
+      if (!blob.includes(q)) return false;
+    }
+    return true;
+  });
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan=8>No data</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(t => `
+    <tr>
+      <td>${t.id}</td>
+      <td>${(t.ts_iso||'').slice(0, 19)}</td>
+      <td>${t.action}</td>
+      <td>${t.symbol || ''}</td>
+      <td>${fmt(t.quantity, 4)}</td>
+      <td>${fmt(t.price, 10)}</td>
+      <td>${fmt(t.usdt_value, 2)}</td>
+      <td>${t.note || ''}</td>
+    </tr>
+  `).join('');
+}
+
 async function loadTrades() {
   const mode = (document.querySelector('[name="mode"]') || {}).value || 'paper';
   try {
     const trades = await api(`/api/trades?mode=${mode}`);
-    const tbody = document.querySelector('#trades-table tbody');
-    if (!Array.isArray(trades)) { tbody.innerHTML = '<tr><td colspan=8>No data</td></tr>'; return; }
-    tbody.innerHTML = trades.map(t => `
-      <tr>
-        <td>${t.id}</td>
-        <td>${(t.ts_iso||'').slice(0, 19)}</td>
-        <td>${t.action}</td>
-        <td>${t.symbol || ''}</td>
-        <td>${fmt(t.quantity, 4)}</td>
-        <td>${fmt(t.price, 10)}</td>
-        <td>${fmt(t.usdt_value, 2)}</td>
-        <td>${t.note || ''}</td>
-      </tr>
-    `).join('');
+    _tradesCache = Array.isArray(trades) ? trades : [];
+    renderTradesTable();
   } catch (e) { console.error('trades failed', e); }
 }
+
+// v6.x: filter inputs live (text + date range) + Clear button
+(function () {
+  ['trades-filter', 'trades-filter-from', 'trades-filter-to'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input',  renderTradesTable);
+      el.addEventListener('change', renderTradesTable);
+    }
+  });
+  const clearBtn = document.getElementById('btn-filter-clear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      ['trades-filter', 'trades-filter-from', 'trades-filter-to'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      renderTradesTable();
+    });
+  }
+})();
 
 async function loadStates() {
   const mode = (document.querySelector('[name="mode"]') || {}).value || 'paper';
@@ -497,13 +613,46 @@ async function refreshAll() {
 function downloadTradesCSV(mode) {
   // Δεν χρησιμοποιούμε api() γιατί θέλουμε binary download, όχι JSON.
   // Browser θα κατεβάσει το CSV ως αρχείο μέσω Content-Disposition header.
-  window.location.href = `/api/trades/export?mode=${encodeURIComponent(mode)}`;
+  // v6.x: αν είναι επιλεγμένες ημερομηνίες στα date pickers, περνάμε τις στο export.
+  const fromEl = document.getElementById('trades-filter-from');
+  const toEl   = document.getElementById('trades-filter-to');
+  const fromDate = fromEl ? fromEl.value : '';
+  const toDate   = toEl   ? toEl.value   : '';
+  let url = `/api/trades/export?mode=${encodeURIComponent(mode)}`;
+  if (fromDate) url += `&start_date=${encodeURIComponent(fromDate)}`;
+  if (toDate)   url += `&end_date=${encodeURIComponent(toDate)}`;
+  window.location.href = url;
 }
 const _btnExportPaper = document.getElementById('btn-export-paper');
 if (_btnExportPaper) _btnExportPaper.addEventListener('click', () => downloadTradesCSV('paper'));
 const _btnExportLive  = document.getElementById('btn-export-live');
 if (_btnExportLive)  _btnExportLive.addEventListener('click',  () => downloadTradesCSV('live'));
 
-// Init
+// v6.x: Refresh VIP prices button handler
+const btnRefreshVip = document.getElementById('btn-refresh-vip');
+if (btnRefreshVip) {
+  btnRefreshVip.addEventListener('click', async () => {
+    btnRefreshVip.disabled = true;
+    const origText = btnRefreshVip.textContent;
+    btnRefreshVip.textContent = 'Refreshing...';
+    try {
+      const r = await api('/api/vip/refresh', {method: 'POST'});
+      if (r.ok) {
+        const summary = Object.entries(r.prices || {}).map(([c, p]) => `${c}=${p}`).join(', ');
+        showMsg(`VIP prices refreshed: ${summary || '(no coins)'}`, 'ok');
+      } else {
+        showMsg(`VIP refresh failed: ${r.error}`, 'error');
+      }
+      await loadStatus();
+    } catch (e) {
+      showMsg(`VIP refresh error: ${e}`, 'error');
+    } finally {
+      btnRefreshVip.disabled = false;
+      btnRefreshVip.textContent = origText;
+    }
+  });
+}
+
+// v6.x: Bootstrap (restored after accidental truncation in earlier commit)
 loadConfig().then(refreshAll);
 setInterval(refreshAll, REFRESH_MS);

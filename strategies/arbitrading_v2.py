@@ -66,6 +66,13 @@ class BotConfig:
     scale_vip_coin:          float            = 5.0
     min_order_usdt:          float            = 5.0
 
+    # ── v6.x: DYNAMIC_REPAY_PERCENTAGE (bypasses SELL_TRIGGER on UP moves) ────
+    # Όταν enabled: σε ΚΑΘΕ +X% κίνηση πάνω από το REFERENCE → ΑΜΕΣΟ repay
+    # qty = TOTAL_BASE × actual_move_pct (cumulative). REFERENCE → current price.
+    # SELL_TRIGGER + SECOND_PROFIT(SELL) bypassed. BUY πλευρά αμετάβλητη.
+    dynamic_repay_enabled:    bool  = False
+    dynamic_repay_percentage: float = 1.0   # default 1% step
+
 
 @dataclass
 class BotMemory:
@@ -101,12 +108,23 @@ class BotMemory:
     buy_trigger_count:       int   = 0
     sell_trigger_count:      int   = 0
 
+    # ── v6.x: cycle-cumulative counters (UI display only) ────────────────────
+    # Δεν μηδενίζονται σε αλλαγή κατεύθυνσης — μηδενίζονται ΜΟΝΟ σε νέο cycle
+    # (SETUP), RESSET_INVEST ή MARGIN_PROTECT. Δεν επηρεάζουν τη λογική
+    # SECOND_PROFIT — αυτή χρησιμοποιεί τα παλιά per-direction counters παραπάνω.
+    buy_count_total:         int   = 0
+    sell_count_total:        int   = 0
+    # v6.x: DYNAMIC_REPAY counter (single, no per-direction split — UP only).
+    dynamic_repay_count:     int   = 0
+
     # ── v4: Promote 2 state ───────────────────────────────────────────────────
     grand_amount:            float = 0.0         # Αποθηκεύεται σε κάθε SETUP
     last_vip_coin:           float = 0.0         # Cumulative VIP purchase cost
     priority_rotation_ix:    int   = 0           # Δείκτης rotating priority
     vip_holdings:            Dict[str, float] = field(default_factory=dict)
     vip_borrow_usdt:         float = 0.0         # Αθροιστικός VIP-based δανεισμός USDT
+    # v6.x: per-coin cumulative purchase cost (για display purchase value στο UI)
+    vip_purchase_cost:       Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -227,7 +245,19 @@ class ArbitradingV2:
             m.total_base_coin = cfg.start_base_coin + actual_qty
             logger.info(f"  Βήμα 4 | TOTAL = {cfg.start_base_coin} + {actual_qty:.4f} = {m.total_base_coin:.4f}")
         else:
-            # ΕΠΑΝΕΚΚΙΝΗΣΗ: Μόνο SHORT
+            # ΕΠΑΝΕΚΚΙΝΗΣΗ: Δύο sub-cases:
+            #  (a) Promote 1 path: ο closing_sell έχει ήδη μετατρέψει USDT→BASE,
+            #      άρα TOTAL > 0 και CASH = 0. Δεν χρειάζεται να αγοράσουμε BASE.
+            #  (b) Promote 2 path: ο closing_sell πούλησε ΟΛΟ το BASE (Step 2)
+            #      και αγόρασε VIP από surplus. TOTAL = 0 αλλά CASH > 0.
+            #      Πρέπει να αγοράσουμε BASE με ΟΛΟ το CASH ΠΡΙΝ συνεχίσουμε.
+            if m.total_base_coin == 0 and m.available_usdt > 0:
+                buy_qty = m.available_usdt / price
+                actual_qty, actual_price = self.executor.buy_base_coin(buy_qty, price)
+                actual_cost = actual_qty * actual_price
+                m.total_base_coin += actual_qty
+                m.available_usdt  -= actual_cost
+                logger.info(f"  Promote 2 re-entry | BUY {actual_qty:.4f} @ {actual_price:.6f} ({actual_cost:.2f} USDT)")
             logger.info(f"  Επανεκκίνηση | LONG αμετάβλητο | USDT debt: {m.usdt_debt:.2f}")
             logger.info(f"  TOTAL_BASE_COIN = {m.total_base_coin:.4f}")
 
@@ -245,11 +275,17 @@ class ArbitradingV2:
         logger.info(f"  Βήμα 6 | Πώληση {sell_qty:.4f} @ {sell_price:.6f} -> {usdt_received:.2f} USDT")
         logger.info(f"  REFERENCE = {m.reference_price:.6f}")
 
-        # v4 §6 Βήμα 7: Αποθήκευση Grand_amount
-        # Grand_amount = BORROW_USDT + (START_BASE_COIN × price)  για πρώτη έναρξη
-        # ή = αξία δομής μετά SETUP για επανεκκίνηση (ίσο με value των assets)
-        m.grand_amount = m.usdt_debt + (m.total_base_coin * price)
-        logger.info(f"  Grand_amount = {m.grand_amount:.2f} USDT")
+        # v6.x §6 Βήμα 7: Αποθήκευση Grand_amount (per-promote semantics).
+        # Promote 1: ενημερώνεται σε ΚΑΘΕ νέο SETUP (= TOTAL_BASE × REFERENCE)
+        #            ώστε το display να δείχνει την τρέχουσα BASE position value.
+        # Promote 2: παραμένει στην αρχική αξία (set μόνο στον πρώτο SETUP).
+        #            Η αρχική αξία είναι το baseline για το surplus calculation
+        #            σε κάθε επόμενο cycle. Έτσι surplus = cycle profit κάθε φορά.
+        if m.grand_amount == 0 or cfg.promote != 2:
+            m.grand_amount = m.total_base_coin * price
+            logger.info(f"  Grand_amount UPDATED = {m.grand_amount:.2f} USDT (= TOTAL_BASE × REFERENCE)")
+        else:
+            logger.info(f"  Grand_amount KEPT = {m.grand_amount:.2f} USDT (Promote 2 — fixed since first SETUP)")
 
         logger.info("  === ΔΟΜΗ ===")
         logger.info(f"  ASSET:  {m.total_base_coin:.4f} ({m.total_base_coin * price:.2f} USDT)")
@@ -261,6 +297,11 @@ class ArbitradingV2:
         m.has_bought              = False
         m.buy_trigger_count       = 0
         m.sell_trigger_count      = 0
+        # v6.x: reset cycle-cumulative counters σε νέο cycle
+        m.buy_count_total         = 0
+        m.sell_count_total        = 0
+        # v6.x: reset DYNAMIC_REPAY counter σε νέο cycle
+        m.dynamic_repay_count     = 0
 
         self._reset_buy_tracker()
         self._reset_sell_tracker()
@@ -280,6 +321,18 @@ class ArbitradingV2:
     # =========================================================================
 
     def _monitor(self, price: float, timestamp: datetime) -> None:
+        cfg = self.config
+        # v6.x: DYNAMIC_REPAY mode bypasses SELL_TRIGGER for UP moves when enabled.
+        # BUY tracker still runs normally for DOWN moves.
+        if cfg.dynamic_repay_enabled:
+            if self._process_dynamic_repay(price, timestamp):
+                return  # repay happened (and possibly cycle close)
+            buy_triggered = self._update_buy_tracker(price)
+            if buy_triggered:
+                self._execute_buy(price, timestamp)
+            return
+
+        # Existing path (DYNAMIC_REPAY disabled)
         buy_triggered  = self._update_buy_tracker(price)
         sell_triggered = self._update_sell_tracker(price)
 
@@ -293,6 +346,88 @@ class ArbitradingV2:
             self._execute_buy(price, timestamp)
 
     # =========================================================================
+    # DYNAMIC_REPAY (v6.x) — bypasses SELL_TRIGGER for UP moves when enabled.
+    # =========================================================================
+
+    def _process_dynamic_repay(self, price: float, timestamp: datetime) -> bool:
+        """v6.x: DYNAMIC_REPAY logic. Returns True if repay was executed.
+
+        Threshold (asymmetric, depending on has_bought):
+          - has_bought=False (μόνο up moves):  REF × (1 + DRP%)        [μικρά steps, 1%]
+          - has_bought=True  (μετά από BUY):   REF × (1 + MIN_PROFIT%) [κλείσιμο cycle, 10%]
+
+        Quantity:   TOTAL_BASE × (price - REFERENCE) / REFERENCE  (cumulative)
+        Effect:     repay BORROW; REFERENCE ← current price; counter +=1
+        Cycle end:  if has_bought=True → trigger CLOSING_SELL flow (Promote 1/2)
+        """
+        m = self.memory
+        cfg = self.config
+
+        # v6.x: ασύμμετρο threshold ανάλογα με has_bought.
+        # Σενάριο 1 (DYN_REPAY × N → BUY → DYN_REPAY closing):
+        #   pre-BUY DYN_REPAYs χρησιμοποιούν DRP% (1%)
+        #   post-BUY closing DYN_REPAY χρησιμοποιεί MIN_PROFIT% (10%) για να
+        #   εξασφαλιστεί σημαντικό cycle profit.
+        # Σενάριο 2 (BUY → DYN_REPAY closing):
+        #   το closing DYN_REPAY χρησιμοποιεί MIN_PROFIT% (10%).
+        if m.has_bought:
+            active_pct = cfg.min_profit_percent
+        else:
+            active_pct = cfg.dynamic_repay_percentage
+        threshold = round(m.reference_price * (1 + active_pct / 100.0), 10)
+        if price < threshold:
+            return False
+
+        # Cumulative: αν price > threshold απλώς (π.χ. price jumped 5% σε ένα tick),
+        # χρησιμοποιούμε actual move % και κάνουμε ΕΝΑ repay ίσο με αυτό.
+        actual_pct = (price - m.reference_price) / m.reference_price if m.reference_price > 0 else 0
+        qty        = m.total_base_coin * actual_pct
+        if qty <= 0:
+            return False
+
+        actual_repay = min(qty, m.borrow_base_coin)
+        if actual_repay <= 0:
+            return False
+
+        # Execute repay (ίδια λογική με _execute_repay_sell — μετακίνηση από
+        # TOTAL προς BORROW χωρίς spot trade leg).
+        self.executor.repay_base_coin(actual_repay)
+        m.total_base_coin  -= actual_repay
+        m.borrow_base_coin -= actual_repay
+
+        m.sel_price          = price
+        m.reference_price    = price        # update REFERENCE (BUY threshold moves up)
+        m.dynamic_repay_count += 1
+        # v6.x: κάθε DYNAMIC_REPAY καταγράφεται και ως SELL count (UI display).
+        # Δεν αλλάζει τη λογική SECOND_PROFIT (η οποία ΔΕΝ εφαρμόζεται όταν DYNAMIC_REPAY=ON).
+        m.sell_count_total   += 1
+
+        # BUY tracker μετακινείται μαζί με REFERENCE
+        self._reset_buy_tracker()
+
+        self._log_trade(timestamp, "DYNAMIC_REPAY", price, actual_repay,
+                        actual_repay * price, m.borrow_base_coin, "MONITORING",
+                        notes=f"pct={actual_pct*100:.4f}% | new REF={price}")
+        logger.info(f"  DYNAMIC_REPAY | qty={actual_repay:.4f} @ {price:.6f} "
+                    f"({actual_pct*100:.4f}%) | TOTAL={m.total_base_coin:.4f} "
+                    f"BORROW={m.borrow_base_coin:.4f} | new REF={price} | "
+                    f"count={m.dynamic_repay_count}")
+
+        # v6.x: cycle close logic — αντίστοιχη με την παλιά SELL_TRIGGER.
+        # Πρώτο DYN_REPAY ΜΕΤΑ από BUY (has_bought=True) κλείνει τον κύκλο.
+        # Σενάρια που κλείνουν cycle:
+        #   (1) DYN_REPAY (×N) → BUY (×M) → DYN_REPAY (×1, κλείνει)
+        #   (2) BUY (×M) → DYN_REPAY (×1, κλείνει)
+        # Σενάρια που ΔΕΝ κλείνουν cycle (μόνο up moves, χωρίς BUY):
+        #   DYN_REPAY (×N, χωρίς BUY ποτέ) — απλά repays, κύκλος συνεχίζει
+        if m.has_bought:
+            logger.info(f"  DYNAMIC_REPAY | has_bought=True → trigger CLOSING_SELL")
+            self.state = BotState.CLOSING_SELL
+            self._execute_closing_sell(price, timestamp)
+
+        return True
+
+    # =========================================================================
     # BUY TRACKER (v4: χρήση dispatcher profit%)
     # =========================================================================
 
@@ -300,26 +435,34 @@ class ArbitradingV2:
         m   = self.memory
         pct = self._get_active_profit_pct('buy')
         m.buy_activated         = False
-        m.buy_lowest_activation = m.reference_price * (1 - pct / 100)
-        m.buy_trailing_stop     = m.buy_lowest_activation * (1 + self.config.trailing_stop / 100)
+        # v6.x: round στα 10 δεκαδικά (matching UI display) για να αποφεύγεται
+        # floating-point precision mismatch όταν ο χρήστης στέλνει την εμφανιζόμενη
+        # τιμή στο price injection.
+        m.buy_lowest_activation = round(m.reference_price * (1 - pct / 100), 10)
+        m.buy_trailing_stop     = round(m.buy_lowest_activation * (1 + self.config.trailing_stop / 100), 10)
 
     def _update_buy_tracker(self, price: float) -> bool:
         m   = self.memory
         cfg = self.config
         pct = self._get_active_profit_pct('buy')
-        initial_activation = m.reference_price * (1 - pct / 100)
+        # v6.x: round threshold στα 10 δεκαδικά (όσα δείχνει το UI) ώστε όταν
+        # ο χρήστης στέλνει την εμφανιζόμενη τιμή να μην αποτυγχάνει η σύγκριση
+        # λόγω floating-point precision (π.χ. 92.577*0.90 = 83.31929999999999).
+        initial_activation = round(m.reference_price * (1 - pct / 100), 10)
 
         if not m.buy_activated:
             if price <= initial_activation:
                 m.buy_activated         = True
                 m.buy_lowest_activation = price
-                m.buy_trailing_stop     = price * (1 + cfg.trailing_stop / 100)
+                # v6.x: round trailing στα 10 δεκαδικά (matching UI display)
+                m.buy_trailing_stop     = round(price * (1 + cfg.trailing_stop / 100), 10)
                 logger.info(f"  [{m.current_timestamp}] BUY ACTIVATED @ {price:.6f} | threshold: {initial_activation:.6f} | trailing: {m.buy_trailing_stop:.6f}")
         else:
-            next_step = m.buy_lowest_activation * (1 - cfg.step_point / 100)
+            next_step = round(m.buy_lowest_activation * (1 - cfg.step_point / 100), 10)
             if price <= next_step:
                 m.buy_lowest_activation = price
-                m.buy_trailing_stop     = price * (1 + cfg.trailing_stop / 100)
+                # v6.x: round trailing στα 10 δεκαδικά (matching UI display)
+                m.buy_trailing_stop     = round(price * (1 + cfg.trailing_stop / 100), 10)
                 logger.info(f"  [{m.current_timestamp}] BUY STEP_POINT ↓ @ {price:.6f} | trailing: {m.buy_trailing_stop:.6f}")
             elif price >= m.buy_trailing_stop:
                 logger.info(f"  [{m.current_timestamp}] BUY TRIGGER @ {price:.6f} | activation: {m.buy_lowest_activation:.6f} | trailing: {m.buy_trailing_stop:.6f}")
@@ -335,26 +478,34 @@ class ArbitradingV2:
         m   = self.memory
         pct = self._get_active_profit_pct('sell')
         m.sell_activated           = False
-        m.sell_highest_activation  = m.reference_price * (1 + pct / 100)
-        m.sell_trailing_stop       = m.sell_highest_activation * (1 - self.config.trailing_stop / 100)
+        # v6.x: round στα 10 δεκαδικά (matching UI display) για να αποφεύγεται
+        # floating-point precision mismatch όταν ο χρήστης στέλνει την εμφανιζόμενη
+        # τιμή στο price injection.
+        m.sell_highest_activation  = round(m.reference_price * (1 + pct / 100), 10)
+        m.sell_trailing_stop       = round(m.sell_highest_activation * (1 - self.config.trailing_stop / 100), 10)
 
     def _update_sell_tracker(self, price: float) -> bool:
         m   = self.memory
         cfg = self.config
         pct = self._get_active_profit_pct('sell')
-        initial_activation = m.reference_price * (1 + pct / 100)
+        # v6.x: round threshold στα 10 δεκαδικά (όσα δείχνει το UI) ώστε όταν
+        # ο χρήστης στέλνει την εμφανιζόμενη τιμή να μην αποτυγχάνει η σύγκριση
+        # λόγω floating-point precision (π.χ. 92.577*1.10 = 101.83470000000001).
+        initial_activation = round(m.reference_price * (1 + pct / 100), 10)
 
         if not m.sell_activated:
             if price >= initial_activation:
                 m.sell_activated          = True
                 m.sell_highest_activation = price
-                m.sell_trailing_stop      = price * (1 - cfg.trailing_stop / 100)
+                # v6.x: round trailing στα 10 δεκαδικά (matching UI display)
+                m.sell_trailing_stop      = round(price * (1 - cfg.trailing_stop / 100), 10)
                 logger.info(f"  [{m.current_timestamp}] SELL ACTIVATED @ {price:.6f} | threshold: {initial_activation:.6f} | trailing: {m.sell_trailing_stop:.6f}")
         else:
-            next_step = m.sell_highest_activation * (1 + cfg.step_point / 100)
+            next_step = round(m.sell_highest_activation * (1 + cfg.step_point / 100), 10)
             if price >= next_step:
                 m.sell_highest_activation = price
-                m.sell_trailing_stop      = price * (1 - cfg.trailing_stop / 100)
+                # v6.x: round trailing στα 10 δεκαδικά (matching UI display)
+                m.sell_trailing_stop      = round(price * (1 - cfg.trailing_stop / 100), 10)
                 logger.info(f"  [{m.current_timestamp}] SELL STEP_POINT ↑ @ {price:.6f} | trailing: {m.sell_trailing_stop:.6f}")
             elif price <= m.sell_trailing_stop:
                 logger.info(f"  [{m.current_timestamp}] SELL TRIGGER @ {price:.6f} | activation: {m.sell_highest_activation:.6f} | trailing: {m.sell_trailing_stop:.6f}")
@@ -390,6 +541,8 @@ class ArbitradingV2:
         # v4: Per-direction counter — BUY count +1, SELL count reset
         m.buy_trigger_count  += 1
         m.sell_trigger_count  = 0
+        # v6.x: cumulative cycle counter (UI display, δεν μηδενίζεται)
+        m.buy_count_total    += 1
 
         self._reset_buy_tracker()
         self._reset_sell_tracker()
@@ -420,6 +573,8 @@ class ArbitradingV2:
         # v4: Per-direction counter — SELL count +1, BUY count reset
         m.sell_trigger_count += 1
         m.buy_trigger_count   = 0
+        # v6.x: cumulative cycle counter (UI display, δεν μηδενίζεται)
+        m.sell_count_total   += 1
         # has_bought ΠΑΡΑΜΕΝΕΙ False — ΔΕΝ κλείνει κύκλος
 
         self._reset_buy_tracker()
@@ -500,10 +655,12 @@ class ArbitradingV2:
                         m.total_base_coin * price, 0.0, "CLOSING_SELL",
                         notes=f"Κύκλος #{m.cycle_count} (Promote 1) | Start={m.total_base_coin:.4f}")
 
-        # Επανεκκίνηση SETUP
-        logger.info(f"  Επανεκκίνηση SETUP @ {price:.6f}")
+        # v6.x: Set state σε SETUP χωρίς inline _execute_setup. Έτσι ο επόμενος
+        # tick θα επιτρέψει στο BotManager να εφαρμόσει NEXT_CYCLE pending config
+        # (π.χ. αλλαγή promote 1→2) πριν τρέξει το νέο SETUP. Αν ήταν inline, το
+        # _execute_setup θα έτρεχε με το παλιό config.
+        logger.info(f"  Νέο SETUP θα εκτελεστεί στον επόμενο tick (pending config εφαρμόζεται πρώτα)")
         self.state = BotState.SETUP
-        self._execute_setup(price, timestamp)
 
     def _execute_closing_sell_buy_choice_coins(self, price: float, timestamp: datetime) -> None:
         """PROMOTE 2 — Buy_Choice_Coins (v4 §11.2).
@@ -556,8 +713,19 @@ class ArbitradingV2:
             logger.info(f"  [Promote2 βήμα 2] Sold {sell_qty:.4f} → {usdt_received:.2f} USDT")
 
         # Βήμα 3: Surplus vs Grand_amount
-        surplus = m.available_usdt - m.grand_amount
-        logger.info(f"  [Promote2 βήμα 3] available_usdt={m.available_usdt:.2f} | grand={m.grand_amount:.2f} | surplus={surplus:.2f}")
+        # v6.x: αφαιρούμε ΚΑΙ το συσσωρευμένο vip_borrow_usdt (από προηγούμενους
+        # κύκλους). Λόγος: το vip_borrow είχε προστεθεί στο available_usdt στο
+        # προηγούμενο cycle's step 5 και πέρασε στο SETUP — άρα το βλέπουμε στο
+        # current available, αλλά ΔΕΝ είναι τρέχον κέρδος. Αν δεν αφαιρεθεί, το
+        # surplus φουσκώνει και το step 4/5 αγοράζει υπερβολικό VIP + δανείζεται
+        # υπερβολικό USDT.
+        surplus = m.available_usdt - m.grand_amount - m.vip_borrow_usdt
+        logger.info(f"  [Promote2 βήμα 3] available={m.available_usdt:.2f} | grand={m.grand_amount:.2f} | vip_borrow_prev={m.vip_borrow_usdt:.2f} | surplus={surplus:.2f}")
+
+        # v6.x: αποθήκευση last_vip_coin ΠΡΙΝ από το Step 4 buy. Έτσι στο Step 5
+        # μπορούμε να υπολογίσουμε appreciation που περιλαμβάνει το ΝΕΟ VIP που
+        # μόλις αγοράσαμε (γιατί total_vip_market_AFTER_step4 ήδη το περιλαμβάνει).
+        last_vip_coin_pre_step4 = m.last_vip_coin
 
         # Βήμα 4: VIP purchase (αν surplus > min_order)
         if surplus > cfg.min_order_usdt:
@@ -565,19 +733,22 @@ class ArbitradingV2:
         else:
             logger.info(f"  [Promote2 βήμα 4] surplus ({surplus:.2f}) ≤ min_order ({cfg.min_order_usdt}) — skip VIP purchase")
 
-        # Βήμα 5: VIP_BORROW calculation
+        # v6.x Βήμα 5: VIP_BORROW με extended formula:
+        #   appreciation_extended = total_vip_market_AFTER_step4 - last_vip_coin_PRE_step4
+        #   Δηλαδή: (παλιά appreciation) + (αξία ΝΕΟΥ VIP από Step 4)
+        # Άρα borrow/repay εφαρμόζεται και στις δύο πλευρές με SCALE_VIP_COIN.
         total_vip_market = self._calc_vip_market_value()
-        appreciation = total_vip_market - m.last_vip_coin
-        logger.info(f"  [Promote2 βήμα 5] VIP market={total_vip_market:.2f} | LAST_VIP={m.last_vip_coin:.2f} | appreciation={appreciation:.2f}")
+        appreciation = total_vip_market - last_vip_coin_pre_step4
+        borrow_or_repay = appreciation * cfg.scale_vip_coin
+        logger.info(f"  [Promote2 βήμα 5] VIP market={total_vip_market:.2f} | LAST_VIP_pre={last_vip_coin_pre_step4:.2f} | appreciation_ext={appreciation:.2f} | scaled={borrow_or_repay:.2f}")
 
-        if appreciation > 0:
-            new_borrow = appreciation * cfg.scale_vip_coin
-            actual_borrowed = self.executor.borrow_usdt_vip(new_borrow)
+        if borrow_or_repay > 0:
+            actual_borrowed = self.executor.borrow_usdt_vip(borrow_or_repay)
             m.vip_borrow_usdt += actual_borrowed
             m.available_usdt  += actual_borrowed
             logger.info(f"  [Promote2 βήμα 5] +BORROW USDT via VIP: {actual_borrowed:.2f} (SCALE={cfg.scale_vip_coin})")
-        elif appreciation < 0:
-            repay_amount = min(abs(appreciation), m.vip_borrow_usdt, m.available_usdt)
+        elif borrow_or_repay < 0:
+            repay_amount = min(abs(borrow_or_repay), m.vip_borrow_usdt, m.available_usdt)
             if repay_amount > 0:
                 self.executor.repay_usdt_vip(repay_amount)
                 m.vip_borrow_usdt -= repay_amount
@@ -604,10 +775,11 @@ class ArbitradingV2:
                         m.available_usdt, 0.0, "CLOSING_SELL",
                         notes=f"Κύκλος #{m.cycle_count} (Promote 2) | surplus={surplus:.2f} | VIP_holdings={dict(m.vip_holdings)}")
 
-        # Βήμα 6: Restart SETUP με όλα τα USDT
-        logger.info(f"  Επανεκκίνηση SETUP @ {price:.6f}")
+        # v6.x: Set state σε SETUP χωρίς inline _execute_setup (δες σχόλιο στο
+        # Promote 1 closing sell). Έτσι το BotManager θα εφαρμόσει NEXT_CYCLE
+        # pending config πριν το νέο SETUP.
+        logger.info(f"  Νέο SETUP θα εκτελεστεί στον επόμενο tick (pending config εφαρμόζεται πρώτα)")
         self.state = BotState.SETUP
-        self._execute_setup(price, timestamp)
 
     def _buy_vip_coins_from_surplus(self, surplus: float) -> None:
         """VIP allocation logic (§11.2.1):
@@ -662,7 +834,9 @@ class ArbitradingV2:
                 qty, actual_price = self.executor.buy_vip(coin, usdt_amount)
                 m.vip_holdings[coin] = m.vip_holdings.get(coin, 0.0) + qty
                 m.available_usdt    -= usdt_amount
-                m.last_vip_coin     += usdt_amount   # cumulative purchase cost
+                m.last_vip_coin     += usdt_amount   # cumulative purchase cost (όλων των coins)
+                # v6.x: per-coin cumulative cost για display purchase value στο UI
+                m.vip_purchase_cost[coin] = m.vip_purchase_cost.get(coin, 0.0) + usdt_amount
                 logger.info(f"  VIP BUY: {qty:.8f} {coin} @ {actual_price:.2f} = {usdt_amount:.2f} USDT")
             except AttributeError as e:
                 logger.warning(f"  Executor does not support VIP methods: {e}")
@@ -728,6 +902,10 @@ class ArbitradingV2:
         m.has_bought         = False
         m.buy_trigger_count  = 0
         m.sell_trigger_count = 0
+        # v6.x: reset cycle-cumulative counters
+        m.buy_count_total    = 0
+        m.sell_count_total   = 0
+        m.dynamic_repay_count = 0
 
         logger.info(f"  === RESSET_INVEST COMPLETE ===")
         logger.info(f"    USDT cash:        {m.available_usdt:.2f}")
@@ -801,6 +979,10 @@ class ArbitradingV2:
         # v4: Reset per-direction counters
         m.buy_trigger_count  = 0
         m.sell_trigger_count = 0
+        # v6.x: reset cycle-cumulative counters (νέος cycle θα ξεκινήσει σε SETUP)
+        m.buy_count_total    = 0
+        m.sell_count_total   = 0
+        m.dynamic_repay_count = 0
         self.state = BotState.SETUP
 
     # =========================================================================
@@ -824,6 +1006,21 @@ class ArbitradingV2:
         if m.vip_borrow_usdt > 0:
             total_debt += m.vip_borrow_usdt
         ratio = total_assets / total_debt if total_debt > 0 else 0
+
+        # v6.x: enriched VIP holdings — quantity + purchase_cost + current_value
+        vip_enriched: Dict[str, dict] = {}
+        for coin, qty in m.vip_holdings.items():
+            try:
+                cur_price = self.executor.get_vip_price(coin) if hasattr(self.executor, 'get_vip_price') else 0.0
+            except Exception:
+                cur_price = 0.0
+            cur_value = qty * cur_price if cur_price > 0 else 0.0
+            vip_enriched[coin] = {
+                "quantity":      round(qty, 8),
+                "purchase_cost": round(m.vip_purchase_cost.get(coin, 0.0), 2),
+                "current_value": round(cur_value, 2),
+                "current_price": round(cur_price, 4) if cur_price > 0 else None,
+            }
         return {
             "state":                   self.state.value,
             "cycle_count":             m.cycle_count,
@@ -840,6 +1037,12 @@ class ArbitradingV2:
             "has_bought":              m.has_bought,
             "buy_trigger_count":       m.buy_trigger_count,
             "sell_trigger_count":      m.sell_trigger_count,
+            # v6.x: cycle-cumulative counters (UI display)
+            "buy_count_total":         m.buy_count_total,
+            "sell_count_total":        m.sell_count_total,
+            "dynamic_repay_count":      m.dynamic_repay_count,
+            "dynamic_repay_enabled":    self.config.dynamic_repay_enabled,
+            "dynamic_repay_percentage": self.config.dynamic_repay_percentage,
             "buy_activated":           m.buy_activated,
             "sell_activated":          m.sell_activated,
             "buy_trailing_stop":       round(m.buy_trailing_stop, 10),
@@ -847,6 +1050,7 @@ class ArbitradingV2:
             "grand_amount":            round(m.grand_amount, 2),
             "last_vip_coin":           round(m.last_vip_coin, 2),
             "vip_holdings":            dict(m.vip_holdings),
+            "vip_holdings_enriched":   vip_enriched,
             "vip_borrow_usdt":         round(m.vip_borrow_usdt, 2),
             "promote":                 self.config.promote,
             "second_profit_enabled":   self.config.second_profit_enabled,
