@@ -386,6 +386,9 @@ class ArbitradingV2:
         m.sel_price          = price
         m.reference_price    = price        # update REFERENCE (BUY threshold moves up)
         m.dynamic_repay_count += 1
+        # v6.x: κάθε DYNAMIC_REPAY καταγράφεται και ως SELL count (UI display).
+        # Δεν αλλάζει τη λογική SECOND_PROFIT (η οποία ΔΕΝ εφαρμόζεται όταν DYNAMIC_REPAY=ON).
+        m.sell_count_total   += 1
 
         # BUY tracker μετακινείται μαζί με REFERENCE
         self._reset_buy_tracker()
@@ -398,10 +401,11 @@ class ArbitradingV2:
                     f"BORROW={m.borrow_base_coin:.4f} | new REF={price} | "
                     f"count={m.dynamic_repay_count}")
 
-        # v6.x: αν το BORROW εξαντλήθηκε ΚΑΙ έχει γίνει buy κάποια στιγμή στον κύκλο,
-        # τρέχουμε το κανονικό closing flow (Promote 1 ή 2) που χειρίζεται την
-        # μετάβαση σε νέο SETUP (συμπεριλαμβανομένου τυχόν VIP purchase για Promote 2).
-        if m.borrow_base_coin <= 1e-9 and m.has_bought:
+        # v6.x: αν το BORROW εξαντλήθηκε → cycle close.
+        # ΣΗΜΑΝΤΙΚΟ: στο DYNAMIC_REPAY mode δεν απαιτείται has_bought (δεν γίνεται
+        # ποτέ BUY αν η τιμή ανεβαίνει συνεχώς). Το cycle κλείνει όταν εξαντληθεί
+        # το BORROW μέσω επαναλαμβανόμενων repays.
+        if m.borrow_base_coin <= 1e-9:
             logger.info(f"  DYNAMIC_REPAY | BORROW exhausted → trigger CLOSING_SELL")
             self.state = BotState.CLOSING_SELL
             self._execute_closing_sell(price, timestamp)
@@ -1021,8 +1025,9 @@ class ArbitradingV2:
             # v6.x: cycle-cumulative counters (UI display)
             "buy_count_total":         m.buy_count_total,
             "sell_count_total":        m.sell_count_total,
-            "dynamic_repay_count":     m.dynamic_repay_count,
-            "dynamic_repay_enabled":   self.config.dynamic_repay_enabled,
+            "dynamic_repay_count":      m.dynamic_repay_count,
+            "dynamic_repay_enabled":    self.config.dynamic_repay_enabled,
+            "dynamic_repay_percentage": self.config.dynamic_repay_percentage,
             "buy_activated":           m.buy_activated,
             "sell_activated":          m.sell_activated,
             "buy_trailing_stop":       round(m.buy_trailing_stop, 10),

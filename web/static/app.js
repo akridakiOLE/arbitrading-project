@@ -54,6 +54,21 @@ function renderTriggerBoxes(s) {
   let buyTarget  = (st.buy_activated  ? st.buy_trailing_stop  : (ref && pctBuy  !== null ? ref * (1 - pctBuy  / 100) : null));
   let sellTarget = (st.sell_activated ? st.sell_trailing_stop : (ref && pctSell !== null ? ref * (1 + pctSell / 100) : null));
 
+  // v6.x: αν DYNAMIC_REPAY=ON, η SELL trigger γραμμή αντικαθίσταται από
+  // DYNAMIC_REPAY threshold = REFERENCE × (1 + DRP%). SELL_TRIGGER bypassed.
+  const dynEnabled = !!st.dynamic_repay_enabled;
+  const dynPct     = (typeof st.dynamic_repay_percentage === 'number') ? st.dynamic_repay_percentage : null;
+  if (dynEnabled && ref !== null && dynPct !== null) {
+    sellTarget = ref * (1 + dynPct / 100);
+  }
+  // Toggle labels για να ξεχωρίζει τι είναι active
+  const lblSell = document.getElementById('t-sell-label-sell');
+  const lblDyn  = document.getElementById('t-sell-label-dyn');
+  if (lblSell && lblDyn) {
+    lblSell.style.display = dynEnabled ? 'none' : '';
+    lblDyn.style.display  = dynEnabled ? '' : 'none';
+  }
+
   setText('t-buy-val',  buyTarget  !== null && buyTarget  !== undefined ? fmt(buyTarget,  10) : '-');
   setText('t-sell-val', sellTarget !== null && sellTarget !== undefined ? fmt(sellTarget, 10) : '-');
 
