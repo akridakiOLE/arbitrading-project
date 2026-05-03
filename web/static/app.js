@@ -467,13 +467,22 @@ function renderTradesTable() {
   const tbody = document.querySelector('#trades-table tbody');
   if (!tbody) return;
   const filterEl = document.getElementById('trades-filter');
-  const q = (filterEl ? filterEl.value : '').trim().toLowerCase();
-  const filtered = q
-    ? _tradesCache.filter(t => {
-        const blob = `${t.ts_iso || ''} ${t.action || ''} ${t.symbol || ''} ${t.note || ''}`.toLowerCase();
-        return blob.includes(q);
-      })
-    : _tradesCache;
+  const fromEl   = document.getElementById('trades-filter-from');
+  const toEl     = document.getElementById('trades-filter-to');
+  const q        = (filterEl ? filterEl.value : '').trim().toLowerCase();
+  const fromDate = fromEl ? fromEl.value : '';   // "YYYY-MM-DD" από native date input
+  const toDate   = toEl   ? toEl.value   : '';
+
+  const filtered = _tradesCache.filter(t => {
+    const tsDate = (t.ts_iso || '').slice(0, 10);  // ISO start = "YYYY-MM-DD"
+    if (fromDate && tsDate < fromDate) return false;
+    if (toDate   && tsDate > toDate)   return false;
+    if (q) {
+      const blob = `${t.ts_iso || ''} ${t.action || ''} ${t.symbol || ''} ${t.note || ''}`.toLowerCase();
+      if (!blob.includes(q)) return false;
+    }
+    return true;
+  });
   if (filtered.length === 0) {
     tbody.innerHTML = '<tr><td colspan=8>No data</td></tr>';
     return;
@@ -501,10 +510,25 @@ async function loadTrades() {
   } catch (e) { console.error('trades failed', e); }
 }
 
-// v6.x: filter input live
+// v6.x: filter inputs live (text + date range) + Clear button
 (function () {
-  const f = document.getElementById('trades-filter');
-  if (f) f.addEventListener('input', renderTradesTable);
+  ['trades-filter', 'trades-filter-from', 'trades-filter-to'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input',  renderTradesTable);
+      el.addEventListener('change', renderTradesTable);
+    }
+  });
+  const clearBtn = document.getElementById('btn-filter-clear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      ['trades-filter', 'trades-filter-from', 'trades-filter-to'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      renderTradesTable();
+    });
+  }
 })();
 
 async function loadStates() {
@@ -564,7 +588,15 @@ async function refreshAll() {
 function downloadTradesCSV(mode) {
   // Δεν χρησιμοποιούμε api() γιατί θέλουμε binary download, όχι JSON.
   // Browser θα κατεβάσει το CSV ως αρχείο μέσω Content-Disposition header.
-  window.location.href = `/api/trades/export?mode=${encodeURIComponent(mode)}`;
+  // v6.x: αν είναι επιλεγμένες ημερομηνίες στα date pickers, περνάμε τις στο export.
+  const fromEl = document.getElementById('trades-filter-from');
+  const toEl   = document.getElementById('trades-filter-to');
+  const fromDate = fromEl ? fromEl.value : '';
+  const toDate   = toEl   ? toEl.value   : '';
+  let url = `/api/trades/export?mode=${encodeURIComponent(mode)}`;
+  if (fromDate) url += `&start_date=${encodeURIComponent(fromDate)}`;
+  if (toDate)   url += `&end_date=${encodeURIComponent(toDate)}`;
+  window.location.href = url;
 }
 const _btnExportPaper = document.getElementById('btn-export-paper');
 if (_btnExportPaper) _btnExportPaper.addEventListener('click', () => downloadTradesCSV('paper'));

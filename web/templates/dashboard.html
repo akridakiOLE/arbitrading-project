@@ -304,9 +304,14 @@
   <section class="panel">
     <h2>Recent Trades (200)
       <span style="float:right; font-size:11px; font-weight:400; text-transform:none;">
-        <input type="text" id="trades-filter" placeholder="Filter (date, symbol, action…)" style="margin-right:8px; padding:3px 6px; background:#0f1419; border:1px solid #1f2933; color:#e6e6e6; border-radius:3px; font-size:11px;">
-        <button type="button" id="btn-export-paper" class="btn-mini" title="Κατεβάζει ΟΛΑ τα paper trades σε CSV (manual backup)">Export Paper CSV</button>
-        <button type="button" id="btn-export-live"  class="btn-mini" title="Κατεβάζει ΟΛΑ τα live trades σε CSV (manual backup)">Export Live CSV</button>
+        <label style="margin-right:4px; color:#9aa4b1;">From:</label>
+        <input type="date" id="trades-filter-from" title="Από ημερομηνία (συμπεριλαμβάνεται)" style="padding:3px 6px; background:#0f1419; border:1px solid #1f2933; color:#e6e6e6; border-radius:3px; font-size:11px; color-scheme:dark;">
+        <label style="margin:0 4px 0 8px; color:#9aa4b1;">To:</label>
+        <input type="date" id="trades-filter-to" title="Μέχρι ημερομηνία (συμπεριλαμβάνεται)" style="padding:3px 6px; background:#0f1419; border:1px solid #1f2933; color:#e6e6e6; border-radius:3px; font-size:11px; color-scheme:dark;">
+        <input type="text" id="trades-filter" placeholder="Text filter…" style="margin:0 8px 0 8px; padding:3px 6px; background:#0f1419; border:1px solid #1f2933; color:#e6e6e6; border-radius:3px; font-size:11px;">
+        <button type="button" id="btn-filter-clear" class="btn-mini" title="Καθάρισμα φίλτρων">Clear</button>
+        <button type="button" id="btn-export-paper" class="btn-mini" title="Κατεβάζει paper trades σε CSV — αν είναι επιλεγμένες ημερομηνίες, μόνο αυτό το range">Export Paper CSV</button>
+        <button type="button" id="btn-export-live"  class="btn-mini" title="Κατεβάζει live trades σε CSV — αν είναι επιλεγμένες ημερομηνίες, μόνο αυτό το range">Export Live CSV</button>
       </span>
     </h2>
     <div class="table-wrap trades-table-wrap">

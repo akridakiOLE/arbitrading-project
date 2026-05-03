@@ -153,11 +153,24 @@ def create_app() -> Flask:
         if not Path(db_name).exists():
             return jsonify({"error": f"{db_name} not found"}), 404
 
+        # v6.x: optional date range filter (start_date / end_date in YYYY-MM-DD)
+        start_date = request.args.get("start_date")  # inclusive
+        end_date   = request.args.get("end_date")    # inclusive
+        where_clauses = []
+        params = []
+        if start_date:
+            where_clauses.append("ts_iso >= ?")
+            params.append(start_date + "T00:00:00")
+        if end_date:
+            where_clauses.append("ts_iso <= ?")
+            params.append(end_date + "T23:59:59.999999")
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
         try:
             conn = sqlite3.connect(db_name)
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                f"SELECT * FROM {table} ORDER BY id ASC"
+                f"SELECT * FROM {table} {where_sql} ORDER BY id ASC", params
             ).fetchall()
             conn.close()
         except Exception as e:
@@ -172,8 +185,12 @@ def create_app() -> Flask:
         else:
             output.write("(no trades)\n")
 
+        # v6.x: filename περιλαμβάνει date range αν δόθηκε
         ts = _dt.utcnow().strftime("%Y%m%d_%H%M%S")
-        filename = f"{mode}_trades_{ts}.csv"
+        range_suffix = ""
+        if start_date or end_date:
+            range_suffix = f"_{start_date or 'start'}_to_{end_date or 'end'}"
+        filename = f"{mode}_trades{range_suffix}_{ts}.csv"
         return Response(
             output.getvalue(),
             mimetype="text/csv",
