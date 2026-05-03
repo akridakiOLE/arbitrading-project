@@ -55,11 +55,20 @@ function renderTriggerBoxes(s) {
   let sellTarget = (st.sell_activated ? st.sell_trailing_stop : (ref && pctSell !== null ? ref * (1 + pctSell / 100) : null));
 
   // v6.x: αν DYNAMIC_REPAY=ON, η SELL trigger γραμμή αντικαθίσταται από
-  // DYNAMIC_REPAY threshold = REFERENCE × (1 + DRP%). SELL_TRIGGER bypassed.
+  // DYNAMIC_REPAY threshold. SELL_TRIGGER bypassed.
+  // Asymmetric threshold:
+  //   has_bought=False → REF × (1 + DRP%)        (1% by default)
+  //   has_bought=True  → REF × (1 + MIN_PROFIT%) (10% by default — closing cycle)
   const dynEnabled = !!st.dynamic_repay_enabled;
   const dynPct     = (typeof st.dynamic_repay_percentage === 'number') ? st.dynamic_repay_percentage : null;
+  const hasBought  = !!st.has_bought;
+  // Όταν DYN_REPAY=ON και has_bought=True, χρησιμοποιούμε το active_profit_pct_sell
+  // (το οποίο, όταν DYN_REPAY=ON, είναι πάντα min_profit_percent γιατί SELL_TRIGGER
+  // bypassed → sell_trigger_count=0 → min_profit_percent επιστρέφεται).
   if (dynEnabled && ref !== null && dynPct !== null) {
-    sellTarget = ref * (1 + dynPct / 100);
+    const closingPct = (hasBought && typeof st.active_profit_pct_sell === 'number')
+                       ? st.active_profit_pct_sell : dynPct;
+    sellTarget = ref * (1 + closingPct / 100);
   }
   // Toggle labels για να ξεχωρίζει τι είναι active
   const lblSell = document.getElementById('t-sell-label-sell');

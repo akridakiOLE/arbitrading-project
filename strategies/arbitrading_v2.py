@@ -352,17 +352,29 @@ class ArbitradingV2:
     def _process_dynamic_repay(self, price: float, timestamp: datetime) -> bool:
         """v6.x: DYNAMIC_REPAY logic. Returns True if repay was executed.
 
-        Trigger:    price >= REFERENCE × (1 + DRP%)
+        Threshold (asymmetric, depending on has_bought):
+          - has_bought=False (μόνο up moves):  REF × (1 + DRP%)        [μικρά steps, 1%]
+          - has_bought=True  (μετά από BUY):   REF × (1 + MIN_PROFIT%) [κλείσιμο cycle, 10%]
+
         Quantity:   TOTAL_BASE × (price - REFERENCE) / REFERENCE  (cumulative)
         Effect:     repay BORROW; REFERENCE ← current price; counter +=1
-        Cycle end:  if BORROW exhausted → trigger CLOSING_SELL flow (which
-                    handles Promote 1/2 specifics + new SETUP).
+        Cycle end:  if has_bought=True → trigger CLOSING_SELL flow (Promote 1/2)
         """
         m = self.memory
         cfg = self.config
 
-        # Threshold rounded στα 10 δεκαδικά (consistent με τα υπόλοιπα triggers).
-        threshold = round(m.reference_price * (1 + cfg.dynamic_repay_percentage / 100.0), 10)
+        # v6.x: ασύμμετρο threshold ανάλογα με has_bought.
+        # Σενάριο 1 (DYN_REPAY × N → BUY → DYN_REPAY closing):
+        #   pre-BUY DYN_REPAYs χρησιμοποιούν DRP% (1%)
+        #   post-BUY closing DYN_REPAY χρησιμοποιεί MIN_PROFIT% (10%) για να
+        #   εξασφαλιστεί σημαντικό cycle profit.
+        # Σενάριο 2 (BUY → DYN_REPAY closing):
+        #   το closing DYN_REPAY χρησιμοποιεί MIN_PROFIT% (10%).
+        if m.has_bought:
+            active_pct = cfg.min_profit_percent
+        else:
+            active_pct = cfg.dynamic_repay_percentage
+        threshold = round(m.reference_price * (1 + active_pct / 100.0), 10)
         if price < threshold:
             return False
 

@@ -114,8 +114,12 @@ class PaperExecutor:
         # v4 VIP support
         self.vip_holdings    = {}
         self.vip_debt_usdt   = 0.0
+        # v6.x: επεκταμένο default mapping (κοινά VIP coins)
         self.vip_symbols     = vip_symbols or {
-            "BTC": "BTC/USDT", "ETH": "ETH/USDT", "SOL": "SOL/USDT",
+            "BTC":  "BTC/USDT",  "ETH":  "ETH/USDT",  "SOL":  "SOL/USDT",
+            "LINK": "LINK/USDT", "BNB":  "BNB/USDT",  "XRP":  "XRP/USDT",
+            "ADA":  "ADA/USDT",  "DOGE": "DOGE/USDT", "AVAX": "AVAX/USDT",
+            "MATIC":"MATIC/USDT","DOT":  "DOT/USDT",  "ATOM": "ATOM/USDT",
         }
         self._vip_price_cache: Dict[str, tuple] = {}  # coin -> (price, ts)
         self._vip_price_ttl = 30.0   # v6.x: 30s cache για να μειώνουμε api load
