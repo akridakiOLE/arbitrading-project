@@ -88,7 +88,9 @@ class PaperExecutor:
                  db_path:         str   = "paper_trades.db",
                  exchange_id:     str   = "kucoin",
                  slippage_pct:    float = 0.0,
-                 vip_symbols:     Optional[Dict[str, str]] = None):
+                 vip_symbols:     Optional[Dict[str, str]] = None,
+                 symbol:          str   = "",
+                 base_ccy:        str   = ""):
         """
         start_base_coin: Αρχική ποσότητα BASE_COIN (δικά μας κεφάλαια)
         db_path:         SQLite audit log path
@@ -96,7 +98,12 @@ class PaperExecutor:
         slippage_pct:    Προσομοίωση slippage (0.1 = 10bps πάνω στην αγορά, κάτω στην πώληση)
         vip_symbols:     Mapping coin → trading pair για VIP price fetches
                          π.χ. {"BTC": "BTC/USDT", "ETH": "ETH/USDT", "SOL": "SOL/USDT"}
+        symbol:          v6.x: trading pair (π.χ. "SOL/USDT") για audit log SYMBOL column
+        base_ccy:        v6.x: base currency (π.χ. "SOL") για BASE coin trade entries
         """
+        # v6.x: για audit log SYMBOL column
+        self.symbol          = symbol
+        self.base_ccy        = base_ccy
         # Virtual balance (ίδιο με BacktestExecutor)
         self.base_coin       = start_base_coin
         self.usdt            = 0.0
@@ -195,7 +202,7 @@ class PaperExecutor:
     def borrow_base_coin(self, quantity: float) -> float:
         self.base_coin += quantity
         self.base_debt += quantity
-        self._log("BORROW_BASE", quantity=quantity,
+        self._log("BORROW_BASE", quantity=quantity, symbol=self.base_ccy,
                   note=f"debt total: {self.base_debt:.4f}")
         logger.info(f"  [PAPER] borrow_base {quantity:.4f}")
         return quantity
@@ -204,7 +211,7 @@ class PaperExecutor:
         actual = min(quantity, self.base_coin)
         self.base_coin -= actual
         self.base_debt  = max(0.0, self.base_debt - actual)
-        self._log("REPAY_BASE", quantity=actual,
+        self._log("REPAY_BASE", quantity=actual, symbol=self.base_ccy,
                   note=f"debt remaining: {self.base_debt:.4f}")
         logger.info(f"  [PAPER] repay_base {actual:.4f}")
 
@@ -220,6 +227,7 @@ class PaperExecutor:
         self.usdt      -= cost
         self.base_coin += quantity
         self._log("BUY", quantity=quantity, price=exec_price, usdt_value=cost,
+                  symbol=self.base_ccy,
                   note=f"limit={limit_price:.6f} slippage={self.slippage_pct}%")
         logger.info(f"  [PAPER] BUY {quantity:.4f} @ {exec_price:.6f} = {cost:.2f} USDT")
         return (quantity, exec_price)
@@ -233,6 +241,7 @@ class PaperExecutor:
         self.base_coin -= actual_qty
         self.usdt      += usdt_received
         self._log("SELL", quantity=actual_qty, price=exec_price, usdt_value=usdt_received,
+                  symbol=self.base_ccy,
                   note=f"limit={limit_price:.6f} slippage={self.slippage_pct}%")
         logger.info(f"  [PAPER] SELL {actual_qty:.4f} @ {exec_price:.6f} = {usdt_received:.2f} USDT")
         return (actual_qty, exec_price, usdt_received)

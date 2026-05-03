@@ -207,11 +207,15 @@ class BotManager:
                         db_path="live_trades.db",
                     )
                 else:
+                    # v6.x: pass symbol + base_ccy ώστε τα BASE coin trades να
+                    # καταγράφονται στο audit DB με σωστό SYMBOL column.
                     self.executor = PaperExecutor(
                         start_base_coin=bot_config.start_base_coin,
                         db_path="paper_trades.db",
                         exchange_id="kucoin",
                         slippage_pct=0.0,
+                        symbol=self._symbol,
+                        base_ccy=self._symbol.split('/')[0] if '/' in self._symbol else self._symbol,
                     )
 
                 self.state_persistence = StatePersistence(

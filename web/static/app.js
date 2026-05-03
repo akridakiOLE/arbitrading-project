@@ -125,19 +125,25 @@ function renderStatus(s) {
   setText('b-usdt',    fmt(sn.usdt, 2));
   setText('b-udebt',   fmt(sn.usdt_debt, 2));
   setText('b-vdebt',   fmt(sn.vip_debt_usdt, 2));
-  // v6.x: enriched VIP holdings — qty + purchase cost + current value
+  // v6.x: enriched VIP holdings — qty + purchase cost + current value + TOTAL row
   const vipEl = document.getElementById('b-vip');
   const enriched = (s.strategy && s.strategy.vip_holdings_enriched) || null;
   if (vipEl) {
     if (enriched && Object.keys(enriched).length > 0) {
       const lines = [];
+      let totalCost = 0, totalValue = 0;
       for (const [coin, info] of Object.entries(enriched)) {
-        const qty   = (info.quantity      !== undefined) ? Number(info.quantity).toFixed(8) : '-';
-        const cost  = (info.purchase_cost !== undefined) ? Number(info.purchase_cost).toFixed(2) : '-';
-        const val   = (info.current_value !== undefined) ? Number(info.current_value).toFixed(2) : '-';
-        const pnl   = (info.purchase_cost && info.current_value) ? (Number(info.current_value) - Number(info.purchase_cost)).toFixed(2) : '-';
-        lines.push(`${coin}: qty=${qty} | cost=$${cost} | now=$${val} | Δ=${pnl}`);
+        const qtyN  = Number(info.quantity      || 0);
+        const costN = Number(info.purchase_cost || 0);
+        const valN  = Number(info.current_value || 0);
+        const pnlN  = valN - costN;
+        totalCost  += costN;
+        totalValue += valN;
+        lines.push(`${coin}: qty=${qtyN.toFixed(8)} | cost=$${costN.toFixed(2)} | now=$${valN.toFixed(2)} | Δ=${pnlN.toFixed(2)}`);
       }
+      const totalPnl = totalValue - totalCost;
+      lines.push(`──────────────────────────────────────────────────────`);
+      lines.push(`TOTAL:           cost=$${totalCost.toFixed(2)} | now=$${totalValue.toFixed(2)} | Δ=${totalPnl.toFixed(2)}`);
       vipEl.textContent = lines.join('\n');
       vipEl.style.whiteSpace = 'pre-line';
     } else {
@@ -454,26 +460,52 @@ document.getElementById('btn-atr').addEventListener('click', async () => {
 // -----------------------------------------------------------------
 // Tables
 // -----------------------------------------------------------------
+// v6.x: cache τα tρέχοντα trades για in-memory filter
+let _tradesCache = [];
+
+function renderTradesTable() {
+  const tbody = document.querySelector('#trades-table tbody');
+  if (!tbody) return;
+  const filterEl = document.getElementById('trades-filter');
+  const q = (filterEl ? filterEl.value : '').trim().toLowerCase();
+  const filtered = q
+    ? _tradesCache.filter(t => {
+        const blob = `${t.ts_iso || ''} ${t.action || ''} ${t.symbol || ''} ${t.note || ''}`.toLowerCase();
+        return blob.includes(q);
+      })
+    : _tradesCache;
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan=8>No data</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(t => `
+    <tr>
+      <td>${t.id}</td>
+      <td>${(t.ts_iso||'').slice(0, 19)}</td>
+      <td>${t.action}</td>
+      <td>${t.symbol || ''}</td>
+      <td>${fmt(t.quantity, 4)}</td>
+      <td>${fmt(t.price, 10)}</td>
+      <td>${fmt(t.usdt_value, 2)}</td>
+      <td>${t.note || ''}</td>
+    </tr>
+  `).join('');
+}
+
 async function loadTrades() {
   const mode = (document.querySelector('[name="mode"]') || {}).value || 'paper';
   try {
     const trades = await api(`/api/trades?mode=${mode}`);
-    const tbody = document.querySelector('#trades-table tbody');
-    if (!Array.isArray(trades)) { tbody.innerHTML = '<tr><td colspan=8>No data</td></tr>'; return; }
-    tbody.innerHTML = trades.map(t => `
-      <tr>
-        <td>${t.id}</td>
-        <td>${(t.ts_iso||'').slice(0, 19)}</td>
-        <td>${t.action}</td>
-        <td>${t.symbol || ''}</td>
-        <td>${fmt(t.quantity, 4)}</td>
-        <td>${fmt(t.price, 10)}</td>
-        <td>${fmt(t.usdt_value, 2)}</td>
-        <td>${t.note || ''}</td>
-      </tr>
-    `).join('');
+    _tradesCache = Array.isArray(trades) ? trades : [];
+    renderTradesTable();
   } catch (e) { console.error('trades failed', e); }
 }
+
+// v6.x: filter input live
+(function () {
+  const f = document.getElementById('trades-filter');
+  if (f) f.addEventListener('input', renderTradesTable);
+})();
 
 async function loadStates() {
   const mode = (document.querySelector('[name="mode"]') || {}).value || 'paper';

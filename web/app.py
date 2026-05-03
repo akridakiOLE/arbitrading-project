@@ -257,8 +257,9 @@ def create_app() -> Flask:
             conn = sqlite3.connect(db)
             conn.row_factory = sqlite3.Row
             table = "live_trades" if mode == "live" else "paper_trades"
+            # v6.x: αύξηση από 50 → 200 trades (UI scrollable με max-height)
             rows = conn.execute(
-                f"SELECT * FROM {table} ORDER BY id DESC LIMIT 50"
+                f"SELECT * FROM {table} ORDER BY id DESC LIMIT 200"
             ).fetchall()
             conn.close()
             return jsonify([dict(r) for r in rows])
@@ -274,9 +275,10 @@ def create_app() -> Flask:
             return jsonify([])
         try:
             conn = sqlite3.connect(db)
+            # v6.x: μείωση από 20 → 10 state events (συμπιεσμένο στο UI)
             rows = conn.execute(
                 "SELECT ts_iso, event, state FROM state_snapshots "
-                "ORDER BY id DESC LIMIT 20"
+                "ORDER BY id DESC LIMIT 10"
             ).fetchall()
             conn.close()
             return jsonify([{"ts_iso": r[0], "event": r[1], "state": r[2]} for r in rows])
