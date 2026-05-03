@@ -563,3 +563,7 @@ if (btnRefreshVip) {
     }
   });
 }
+
+// v6.x: Bootstrap (restored after accidental truncation in earlier commit)
+loadConfig().then(refreshAll);
+setInterval(refreshAll, REFRESH_MS);
