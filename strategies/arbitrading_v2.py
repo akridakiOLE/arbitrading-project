@@ -608,8 +608,14 @@ class ArbitradingV2:
             logger.info(f"  [Promote2 βήμα 2] Sold {sell_qty:.4f} → {usdt_received:.2f} USDT")
 
         # Βήμα 3: Surplus vs Grand_amount
-        surplus = m.available_usdt - m.grand_amount
-        logger.info(f"  [Promote2 βήμα 3] available_usdt={m.available_usdt:.2f} | grand={m.grand_amount:.2f} | surplus={surplus:.2f}")
+        # v6.x: αφαιρούμε ΚΑΙ το συσσωρευμένο vip_borrow_usdt (από προηγούμενους
+        # κύκλους). Λόγος: το vip_borrow είχε προστεθεί στο available_usdt στο
+        # προηγούμενο cycle's step 5 και πέρασε στο SETUP — άρα το βλέπουμε στο
+        # current available, αλλά ΔΕΝ είναι τρέχον κέρδος. Αν δεν αφαιρεθεί, το
+        # surplus φουσκώνει και το step 4/5 αγοράζει υπερβολικό VIP + δανείζεται
+        # υπερβολικό USDT.
+        surplus = m.available_usdt - m.grand_amount - m.vip_borrow_usdt
+        logger.info(f"  [Promote2 βήμα 3] available={m.available_usdt:.2f} | grand={m.grand_amount:.2f} | vip_borrow_prev={m.vip_borrow_usdt:.2f} | surplus={surplus:.2f}")
 
         # v6.x: αποθήκευση last_vip_coin ΠΡΙΝ από το Step 4 buy. Έτσι στο Step 5
         # μπορούμε να υπολογίσουμε appreciation που περιλαμβάνει το ΝΕΟ VIP που
